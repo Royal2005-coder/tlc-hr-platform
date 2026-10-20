@@ -1,0 +1,68 @@
+# scripts/job.sh seed  (IMAGE is replaced with the current tag)
+{
+ "apiVersion": "batch/v1",
+ "kind": "Job",
+ "metadata": {
+  "generateName": "seed-",
+  "namespace": "tlc-hr"
+ },
+ "spec": {
+  "backoffLimit": 0,
+  "ttlSecondsAfterFinished": 86400,
+  "template": {
+   "spec": {
+    "restartPolicy": "Never",
+    "securityContext": {
+     "fsGroup": 1000
+    },
+    "containers": [
+     {
+      "name": "seed",
+      "image": "IMAGE",
+      "imagePullPolicy": "Never",
+      "command": [
+       "bash",
+       "-c"
+      ],
+      "args": [
+       "set -e\nbench --site tlc-hr.local execute tlc_hr.seed.run"
+      ],
+      "resources": {
+       "requests": {
+        "memory": "256Mi"
+       },
+       "limits": {
+        "memory": "1Gi"
+       }
+      },
+      "volumeMounts": [
+       {
+        "name": "sites",
+        "mountPath": "/home/frappe/frappe-bench/sites"
+       }
+      ],
+      "env": [
+       {
+        "name": "DEMO_PASSWORD",
+        "valueFrom": {
+         "secretKeyRef": {
+          "name": "tlc-hr",
+          "key": "demo-password"
+         }
+        }
+       }
+      ]
+     }
+    ],
+    "volumes": [
+     {
+      "name": "sites",
+      "persistentVolumeClaim": {
+       "claimName": "sites"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

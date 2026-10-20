@@ -1,0 +1,57 @@
+# scripts/job.sh test  (IMAGE is replaced with the current tag)
+{
+ "apiVersion": "batch/v1",
+ "kind": "Job",
+ "metadata": {
+  "generateName": "test-",
+  "namespace": "tlc-hr"
+ },
+ "spec": {
+  "backoffLimit": 0,
+  "ttlSecondsAfterFinished": 86400,
+  "template": {
+   "spec": {
+    "restartPolicy": "Never",
+    "securityContext": {
+     "fsGroup": 1000
+    },
+    "containers": [
+     {
+      "name": "test",
+      "image": "IMAGE",
+      "imagePullPolicy": "Never",
+      "command": [
+       "bash",
+       "-c"
+      ],
+      "args": [
+       "set -e\nbench --site tlc-hr.local set-config allow_tests true\nbench --site tlc-hr.local run-tests --app tlc_hr"
+      ],
+      "resources": {
+       "requests": {
+        "memory": "384Mi"
+       },
+       "limits": {
+        "memory": "1536Mi"
+       }
+      },
+      "volumeMounts": [
+       {
+        "name": "sites",
+        "mountPath": "/home/frappe/frappe-bench/sites"
+       }
+      ]
+     }
+    ],
+    "volumes": [
+     {
+      "name": "sites",
+      "persistentVolumeClaim": {
+       "claimName": "sites"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,57 @@
+# scripts/job.sh migrate  (IMAGE is replaced with the current tag)
+{
+ "apiVersion": "batch/v1",
+ "kind": "Job",
+ "metadata": {
+  "generateName": "migrate-",
+  "namespace": "tlc-hr"
+ },
+ "spec": {
+  "backoffLimit": 0,
+  "ttlSecondsAfterFinished": 86400,
+  "template": {
+   "spec": {
+    "restartPolicy": "Never",
+    "securityContext": {
+     "fsGroup": 1000
+    },
+    "containers": [
+     {
+      "name": "migrate",
+      "image": "IMAGE",
+      "imagePullPolicy": "Never",
+      "command": [
+       "bash",
+       "-c"
+      ],
+      "args": [
+       "set -e\nbench --site all migrate"
+      ],
+      "resources": {
+       "requests": {
+        "memory": "384Mi"
+       },
+       "limits": {
+        "memory": "1536Mi"
+       }
+      },
+      "volumeMounts": [
+       {
+        "name": "sites",
+        "mountPath": "/home/frappe/frappe-bench/sites"
+       }
+      ]
+     }
+    ],
+    "volumes": [
+     {
+      "name": "sites",
+      "persistentVolumeClaim": {
+       "claimName": "sites"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

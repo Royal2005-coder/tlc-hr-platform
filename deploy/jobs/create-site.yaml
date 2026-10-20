@@ -1,0 +1,77 @@
+# scripts/job.sh create-site  (IMAGE is replaced with the current tag)
+{
+ "apiVersion": "batch/v1",
+ "kind": "Job",
+ "metadata": {
+  "generateName": "create-site-",
+  "namespace": "tlc-hr"
+ },
+ "spec": {
+  "backoffLimit": 0,
+  "ttlSecondsAfterFinished": 86400,
+  "template": {
+   "spec": {
+    "restartPolicy": "Never",
+    "securityContext": {
+     "fsGroup": 1000
+    },
+    "containers": [
+     {
+      "name": "create-site",
+      "image": "IMAGE",
+      "imagePullPolicy": "Never",
+      "command": [
+       "bash",
+       "-c"
+      ],
+      "args": [
+       "set -e\nuntil python3 -c \"import socket; socket.create_connection((\\\"mariadb\\\", 3306), 2)\"; do sleep 3; done\nif [ -d sites/tlc-hr.local ]; then echo site exists; exit 0; fi\nbench new-site tlc-hr.local --mariadb-user-host-login-scope=% --admin-password=\"$ADMIN_PASSWORD\" --db-root-username=root --db-root-password=\"$DB_ROOT_PASSWORD\" --install-app erpnext --install-app hrms --install-app erpnextvn --install-app tlc_hr --set-default\nbench --site tlc-hr.local set-config default_language vi\nbench --site tlc-hr.local enable-scheduler\nbench --site tlc-hr.local list-apps"
+      ],
+      "resources": {
+       "requests": {
+        "memory": "512Mi"
+       },
+       "limits": {
+        "memory": "2Gi"
+       }
+      },
+      "volumeMounts": [
+       {
+        "name": "sites",
+        "mountPath": "/home/frappe/frappe-bench/sites"
+       }
+      ],
+      "env": [
+       {
+        "name": "ADMIN_PASSWORD",
+        "valueFrom": {
+         "secretKeyRef": {
+          "name": "tlc-hr",
+          "key": "admin-password"
+         }
+        }
+       },
+       {
+        "name": "DB_ROOT_PASSWORD",
+        "valueFrom": {
+         "secretKeyRef": {
+          "name": "tlc-hr",
+          "key": "db-root-password"
+         }
+        }
+       }
+      ]
+     }
+    ],
+    "volumes": [
+     {
+      "name": "sites",
+      "persistentVolumeClaim": {
+       "claimName": "sites"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

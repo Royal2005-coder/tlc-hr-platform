@@ -1,0 +1,57 @@
+# scripts/job.sh configure  (IMAGE is replaced with the current tag)
+{
+ "apiVersion": "batch/v1",
+ "kind": "Job",
+ "metadata": {
+  "generateName": "configure-",
+  "namespace": "tlc-hr"
+ },
+ "spec": {
+  "backoffLimit": 2,
+  "ttlSecondsAfterFinished": 86400,
+  "template": {
+   "spec": {
+    "restartPolicy": "Never",
+    "securityContext": {
+     "fsGroup": 1000
+    },
+    "containers": [
+     {
+      "name": "configure",
+      "image": "IMAGE",
+      "imagePullPolicy": "Never",
+      "command": [
+       "bash",
+       "-c"
+      ],
+      "args": [
+       "set -e\nls -1 apps > sites/apps.txt\nbench set-config -g db_host mariadb\nbench set-config -gp db_port 3306\nbench set-config -g redis_cache redis://redis-cache:6379\nbench set-config -g redis_queue redis://redis-queue:6379\nbench set-config -g redis_socketio redis://redis-queue:6379\nbench set-config -gp socketio_port 9000\ncat sites/apps.txt"
+      ],
+      "resources": {
+       "requests": {
+        "memory": "128Mi"
+       },
+       "limits": {
+        "memory": "512Mi"
+       }
+      },
+      "volumeMounts": [
+       {
+        "name": "sites",
+        "mountPath": "/home/frappe/frappe-bench/sites"
+       }
+      ]
+     }
+    ],
+    "volumes": [
+     {
+      "name": "sites",
+      "persistentVolumeClaim": {
+       "claimName": "sites"
+      }
+     }
+    ]
+   }
+  }
+ }
+}
