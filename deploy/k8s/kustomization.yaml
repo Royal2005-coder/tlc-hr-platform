@@ -1,7 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: [namespace.yaml, data.yaml, frappe.yaml, evidence.yaml]
+resources: [namespace.yaml, data.yaml, frappe.yaml, evidence.yaml, mailpit.yaml]
 images:
   - name: tlc-hr
     newName: docker.io/library/tlc-hr
-    newTag: cc11d232-202610201624
+    newTag: 68e622e7-202610201659
+configMapGenerator:
+  - name: nginx-template
+    namespace: tlc-hr
+    files: [nginx-template.conf]
+generatorOptions:
+  disableNameSuffixHash: true

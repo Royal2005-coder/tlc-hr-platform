@@ -1,3 +1,4 @@
 *.log
 uat/out/
 __pycache__/
+uat/review/

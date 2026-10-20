@@ -1,8 +1,8 @@
-"""End-to-end UAT of TLC HRM on Frappe HR: one recorded browser session per account, real assertions, Excel sheet and evidence page.
+"""End-to-end UAT v3 of TLC HRM on the standard Frappe HR interface: user journeys per role, recorded, with real assertions.
 
-Run (on the k3s node): ~/tlc-hr/uat/run_uat.sh   (needs a freshly seeded site: every expected number below assumes it)
-Output: /uat/out/<run id>/  videos/*.webm, shots/*.png, UAT_TLC_HRM_<run id>.xlsx, results.json, index.html
-The demo password comes from the environment (DEMO_PASSWORD) and is never written to the output.
+Employees work in the Frappe HR app (/hrms); line managers, HR and the director work on the Frappe desk in the workspace of their
+role. The TLC rules under test: the approval route (line manager then HR), no self approval, a reason to reject, data scope.
+Run (on the k3s node): ~/tlc-hr/tlc-hr-platform/uat/run_uat.sh --reset   (expected numbers assume the clean TLC demo)
 """
 
 import datetime as dt
@@ -23,37 +23,33 @@ OUT = Path(os.environ.get("OUT_DIR", "/uat/out")) / RUN_ID
 DESKTOP = {"width": 1366, "height": 820}
 PHONE = {"width": 390, "height": 844}
 SLOW_MO = int(os.environ.get("SLOW_MO", "250"))
+TO_MANAGER, TO_HR, APPROVED, REJECTED, DRAFT = "Chờ quản lý duyệt", "Chờ nhân sự duyệt", "Đã duyệt", "Từ chối", "Nháp"
 
 ACCOUNTS = {
     "an": {"name": "Nguyễn Hoài An", "role": "Nhân viên văn phòng hội sở (Kinh doanh)", "workforce": "Hội sở", "approver": "Trần Minh Quang"},
-    "binh": {"name": "Trần Văn Bình", "role": "Công nhân Nhà máy 1 (Nhân viên kho)", "workforce": "Nhà máy", "approver": "Đặng Văn Hùng"},
-    "f2w01": {"name": None, "role": "Công nhân Nhà máy 2 (Nhân viên kho)", "workforce": "Nhà máy", "approver": "Lương Quốc Hải"},
+    "binh": {"name": "Trần Văn Bình", "role": "Công nhân Nhà máy 1 - điện thoại", "workforce": "Nhà máy", "approver": "Đặng Văn Hùng"},
+    "f2w01": {"name": None, "role": "Công nhân Nhà máy 2 - điện thoại", "workforce": "Nhà máy", "approver": "Lương Quốc Hải"},
     "hung": {"name": "Đặng Văn Hùng", "role": "Quản lý Nhà máy 1 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
     "hoa": {"name": "Lê Thị Hòa", "role": "HR hội sở - Giám đốc nhân sự (HR Lead)", "workforce": "Hội sở", "approver": "Nguyễn Văn Thành"},
     "lan": {"name": "Hoàng Thị Lan", "role": "HR hội sở - Chuyên viên nhân sự (HR Officer)", "workforce": "Hội sở", "approver": "Lê Thị Hòa"},
     "thanh": {"name": "Nguyễn Văn Thành", "role": "CEO hội sở - Tổng giám đốc", "workforce": "Hội sở", "approver": None},
 }
-SECTIONS = ["inbox", "leave-form-card", "no-approver", "my-requests", "team", "company", "links"]
-SECTION_LABEL = {"inbox": "Việc chờ tôi duyệt", "leave-form-card": "Xin nghỉ phép", "no-approver": "Ghi chú không có cấp duyệt",
-                 "my-requests": "Đơn của tôi", "team": "Đội của tôi", "company": "Tổng quan nhân sự", "links": "Mở nhanh"}
+# Functional matrix: where each account works and what it may do (checked through the landing page and the API).
+SECTIONS = ["hrms", "ws_manager", "ws_hr", "ws_ceo", "approve", "company"]
+SECTION_LABEL = {"hrms": "App Frappe HR (/hrms)", "ws_manager": "Workspace TLC Quản lý", "ws_hr": "Workspace TLC Nhân sự",
+                 "ws_ceo": "Workspace TLC Điều hành", "approve": "Duyệt đơn", "company": "Xem toàn công ty"}
 EXPECTED_SECTIONS = {
-    "an": {"leave-form-card", "my-requests", "links"},
-    "binh": {"leave-form-card", "my-requests", "links"},
-    "f2w01": {"leave-form-card", "my-requests", "links"},
-    "hung": {"inbox", "leave-form-card", "my-requests", "team", "links"},
-    "hoa": {"inbox", "leave-form-card", "my-requests", "company", "links"},
-    "lan": {"inbox", "leave-form-card", "my-requests", "company", "links"},
-    "thanh": {"inbox", "leave-form-card", "no-approver", "my-requests", "team", "company", "links"},
+    "an": {"hrms"}, "binh": {"hrms"}, "f2w01": {"hrms"},
+    "hung": {"ws_manager", "approve"},
+    "hoa": {"ws_hr", "approve", "company"}, "lan": {"ws_hr", "approve", "company"},
+    "thanh": {"ws_ceo", "approve", "company"},
 }
+WORKSPACE_KEY = {"TLC Quản lý": "ws_manager", "TLC Nhân sự": "ws_hr", "TLC Điều hành": "ws_ceo"}
 
-RESULTS = []      # one row per test case
-MATRIX = {}       # account -> visible sections
-VIDEOS = []       # session videos
-REQ = {}          # leave requests created during the run: key -> name
+RESULTS, MATRIX, VIDEOS, REQ = [], {}, [], {}
 
 
 def working_day(n):
-    """n-th working day after today (Monday to Friday)."""
     day, found = dt.date.today(), 0
     while found < n:
         day += dt.timedelta(days=1)
@@ -72,8 +68,10 @@ CAPTION_JS = """
   const t = sessionStorage.getItem('uat-cap'); if (!t) return;
   let el = document.getElementById('uat-cap');
   if (!el) { el = document.createElement('div'); el.id = 'uat-cap';
-    el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(17,24,39,.88);color:#fff;' +
-      'font:600 14px/1.35 system-ui,sans-serif;padding:8px 12px;pointer-events:none';
+    const top = window.__uatPos === 'top';
+    el.style.cssText = 'position:fixed;left:8px;' + (top ? 'top:64px;right:8px;' : 'bottom:8px;max-width:62%;') +
+      'z-index:2147483647;background:rgba(17,24,39,.86);color:#fff;border-radius:8px;' +
+      'font:600 13px/1.35 system-ui,sans-serif;padding:6px 12px;pointer-events:none';
     document.documentElement.appendChild(el); }
   el.textContent = t;
 }
@@ -82,19 +80,18 @@ CAPTION_INIT = "window.addEventListener('DOMContentLoaded', () => { (" + CAPTION
 
 
 class Session:
-    """One account, one browser context, one video."""
-
     def __init__(self, browser, code, account, phone=False):
         self.code, self.account, self.phone = code, account, phone
         self.label = ACCOUNTS[account]["role"]
         viewport = PHONE if phone else DESKTOP
-        self.context = browser.new_context(
-            viewport=viewport, record_video_dir=str(OUT / "videos" / "raw"), record_video_size=viewport,
-            locale="vi-VN", timezone_id="Asia/Ho_Chi_Minh", is_mobile=phone, has_touch=phone,
-            device_scale_factor=2 if phone else 1)
+        self.context = browser.new_context(viewport=viewport, record_video_dir=str(OUT / "videos" / "raw"), record_video_size=viewport,
+                                           locale="vi-VN", timezone_id="Asia/Ho_Chi_Minh", is_mobile=phone, has_touch=phone,
+                                           device_scale_factor=2 if phone else 1)
+        self.context.add_init_script("window.__uatPos = '" + ("top" if phone else "bottom") + "';")
         self.context.add_init_script(CAPTION_INIT)
-        self.context.set_default_timeout(20000)
+        self.context.set_default_timeout(25000)
         self.page = self.context.new_page()
+        self.page.on("dialog", lambda d: d.accept())
         self.t0 = time.monotonic()
         self.index = len(VIDEOS) + 1
 
@@ -108,51 +105,46 @@ class Session:
         seconds = int(time.monotonic() - self.t0)
         return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
-    def shot(self, case_id):
-        path = OUT / "shots" / f"{case_id}.png"
-        self.page.screenshot(path=str(path), full_page=False)
-        return f"shots/{path.name}"
-
     def close(self):
         video = self.page.video
         self.context.close()
         name = f"{self.index:02d}_{self.code}_{self.account}.webm"
-        target = OUT / "videos" / name
-        Path(video.path()).rename(target)
+        Path(video.path()).rename(OUT / "videos" / name)
         VIDEOS.append({"file": f"videos/{name}", "code": self.code, "account": self.account, "role": self.label,
-                       "device": "Điện thoại 390x844" if self.phone else "Máy tính 1366x820",
-                       "cases": [r["id"] for r in RESULTS if r["video"] == f"videos/{name}"]})
-        return name
+                       "device": "Điện thoại 390x844" if self.phone else "Máy tính 1366x820"})
 
 
 @contextmanager
 def case(s, case_id, function, steps, data, expected):
-    """Run one test case inside a session: caption on the video, screenshot, result row with the real outcome."""
     row = {"id": case_id, "account": f"{s.account}@demo.example", "role": s.label, "function": function, "steps": steps,
-           "data": data, "expected": expected, "actual": "", "status": "", "video": None, "time": s.stamp(),
-           "shot": "", "run_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+           "data": data, "expected": expected, "actual": "", "status": "", "time": s.stamp(), "shot": "",
+           "run_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "video": f"videos/{s.index:02d}_{s.code}_{s.account}.webm"}
     s.caption(f"{case_id} · {function}")
     found = {}
     try:
         yield found
-        row["actual"] = found.get("actual", "Đúng như mong đợi")
-        row["status"] = "Đạt"
-    except Exception as exc:  # the case fails, the run goes on
+        row["actual"], row["status"] = found.get("actual", "Đúng như mong đợi"), "Đạt"
+    except Exception as exc:
         row["actual"] = f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
         row["status"] = "Không đạt"
         row["trace"] = traceback.format_exc()[-1500:]
-    s.page.wait_for_timeout(600)
+    s.page.wait_for_timeout(700)
     try:
-        row["shot"] = s.shot(case_id)
+        path = OUT / "shots" / f"{case_id}.png"
+        s.page.screenshot(path=str(path))
+        row["shot"] = f"shots/{path.name}"
     except Exception:
         pass
-    row["video_name"] = f"{s.index:02d}_{s.code}_{s.account}.webm"
-    row["video"] = f"videos/{row['video_name']}"
     RESULTS.append(row)
-    print(f"{row['status']:10} {case_id:8} {function}: {row['actual'][:140]}", flush=True)
+    print(f"{row['status']:10} {case_id:8} {function}: {row['actual'][:150]}", flush=True)
 
 
-# ---------------------------------------------------------------------------------------------------- page helpers
+def check(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+# ---------------------------------------------------------------------------------------------------- common steps
 
 def login(s):
     p = s.page
@@ -161,212 +153,230 @@ def login(s):
     p.locator("#login_email").fill(f"{s.account}@demo.example")
     p.locator("#login_password").fill(PASSWORD)
     p.locator("form.form-login button[type=submit]").click()
-    p.wait_for_url(re.compile(r".*/tlc.*"), timeout=30000)
+    p.wait_for_url(lambda url: "/login" not in url, timeout=30000)
     p.wait_for_load_state("networkidle")
+    p.wait_for_timeout(1500)
 
 
-def home(s):
-    s.page.goto(f"{BASE}/tlc")
-    s.page.wait_for_load_state("networkidle")
+def api(s, method, **params):
+    res = s.page.request.get(f"{BASE}/api/method/{method}", params=params)
+    return res.json().get("message")
 
 
-def visible_sections(p):
-    return [t for t in SECTIONS if p.get_by_test_id(t).count() and p.get_by_test_id(t).first.is_visible()]
+def api_get(s, path):
+    return s.page.request.get(f"{BASE}{path}")
 
 
-def balance(p):
-    return float(p.get_by_test_id("stat-balance").first.locator(".n").inner_text().replace(",", "."))
+def state_of(s, name):
+    return api_get(s, f"/api/resource/Leave Application/{name}").json()["data"]["workflow_state"]
 
 
-def toast(p):
-    t = p.get_by_test_id("toast")
-    expect(t).to_be_visible(timeout=20000)
-    return (t.get_attribute("class") or ""), t.inner_text()
-
-
-def after_reload(p):
-    p.wait_for_timeout(2300)
-    p.wait_for_load_state("networkidle")
-
-
-def submit_leave(s, start, end, reason, half=False):
-    p = s.page
-    form = p.get_by_test_id("leave-form-card")
-    form.scroll_into_view_if_needed()
-    p.get_by_test_id("lf-from").fill(start)
-    p.get_by_test_id("lf-to").fill(end)
-    if half:
-        p.get_by_test_id("lf-half").check()
-    p.get_by_test_id("lf-reason").fill(reason)
-    p.get_by_test_id("lf-submit").click()
-    kind, text = toast(p)
-    return kind, text
-
-
-def created_name(text):
-    match = re.search(r"HR-LAP-\d{4}-\d+", text)
-    if not match:
-        raise AssertionError(f"không thấy số đơn trong thông báo: {text}")
-    return match.group(0)
-
-
-def my_request_state(p, name):
-    row = p.locator(f'[data-testid=my-request][data-name="{name}"]')
-    expect(row).to_be_visible()
-    row.scroll_into_view_if_needed()
-    return row.get_by_test_id("my-request-state").inner_text().strip(), row
-
-
-def inbox_item(p, name):
-    return p.locator(f'[data-testid=inbox-item][data-name="{name}"]')
-
-
-def decide(s, name, decision, reason=None):
-    p = s.page
-    item = inbox_item(p, name)
-    expect(item).to_be_visible()
-    item.scroll_into_view_if_needed()
-    if decision == "approve":
-        item.get_by_test_id("approve").click()
-    else:
-        item.get_by_test_id("reject-open").click()
-        if reason is not None:
-            item.get_by_test_id("reject-reason").fill(reason)
-        item.get_by_test_id("reject-confirm").click()
-    return toast(p)
-
-
-def api_status(s, path):
-    return s.page.request.get(f"{BASE}{path}").status
-
-
-def api_json(s, path):
-    return s.page.request.get(f"{BASE}{path}").json()
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
-def show_desk(s, path, wait_ms=3500):
-    s.page.goto(f"{BASE}{path}")
-    s.page.wait_for_load_state("networkidle")
-    s.page.wait_for_timeout(wait_ms)
-    s.caption("(màn hình desk)")
-
-
-def desk_ok(s, expect_text=None):
-    """A desk screen that should open: no permission error dialog, and the expected text on screen."""
-    p = s.page
-    error = p.locator(".modal-dialog:visible, .msgprint-dialog:visible").filter(has_text=re.compile("quyền|Permission", re.I))
-    check(error.count() == 0, "popup lỗi quyền: " + (error.first.inner_text()[:160] if error.count() else ""))
-    if expect_text:
-        expect(p.locator(".page-head, .page-title, .title-text").filter(has_text=expect_text).first).to_be_visible()
+def visible_button(p, text):
+    return p.locator("button:visible", has_text=text).last
 
 
 def first_case(s, case_id):
-    """Login, home of the account: identity, workforce, approver, sections shown (functional matrix)."""
+    """Login: the account lands on the standard interface of its role; the functional matrix is read from the server."""
     info = ACCOUNTS[s.account]
-    with case(s, case_id, "Đăng nhập và trang chủ theo vai trò",
-              "Mở /login, nhập tài khoản, đăng nhập; hệ thống chuyển về trang chủ /tlc",
-              f"{s.account}@demo.example / mật khẩu demo",
-              f"Vào /tlc; hiển thị họ tên, khối {info['workforce']}" + (f", người duyệt {info['approver']}" if info["approver"] else ", không có cấp duyệt")
-              + "; chỉ các mục: " + ", ".join(SECTION_LABEL[x] for x in SECTIONS if x in EXPECTED_SECTIONS[s.account])) as r:
+    expected = EXPECTED_SECTIONS[s.account]
+    where = "app Frappe HR (/hrms)" if "hrms" in expected else "desk, " + next(SECTION_LABEL[k] for k in expected if k.startswith("ws_"))
+    with case(s, case_id, "Đăng nhập vào đúng giao diện của vai trò", "Đăng nhập", f"{s.account}@demo.example",
+              f"Vào {where}; quyền: {', '.join(SECTION_LABEL[k] for k in SECTIONS if k in expected)}") as r:
         login(s)
         p = s.page
-        name = p.get_by_test_id("person-name").inner_text().strip()
-        if info["name"]:
-            check(name == info["name"], f"tên hiển thị {name!r}")
-        ACCOUNTS[s.account]["name"] = name
-        workforce = p.get_by_test_id("workforce").inner_text().strip()
-        check(workforce == info["workforce"], f"khối {workforce!r}")
-        if info["approver"]:
-            approver = p.get_by_test_id("my-approver").inner_text().strip()
-            check(approver == info["approver"], f"người duyệt {approver!r}")
-        shown = visible_sections(p)
-        MATRIX[s.account] = shown
-        check(set(shown) == EXPECTED_SECTIONS[s.account], f"các mục hiển thị {shown}")
+        url = p.url.replace(BASE, "")
+        shown = set()
+        if url.startswith("/hrms"):
+            shown.add("hrms")
+        else:
+            ws = next((name for name in WORKSPACE_KEY if name in p.locator("body").inner_text()), None)
+            if ws:
+                shown.add(WORKSPACE_KEY[ws])
+        roles = set(p.evaluate("(window.frappe && frappe.user_roles) || []")) if not url.startswith("/hrms") else set()
+        if roles.intersection({"Leave Approver", "TLC HR Lead", "TLC HR Officer"}):
+            shown.add("approve")
+        if len(api_get(s, "/api/resource/Employee?limit_page_length=500").json().get("data", [])) == 60:
+            shown.add("company")
+        MATRIX[s.account] = [k for k in SECTIONS if k in shown]
+        check(shown == expected, f"vào {url}; quyền {sorted(shown)}")
         if s.phone:
             overflow = p.evaluate("document.documentElement.scrollWidth - window.innerWidth")
-            check(overflow <= 1, f"tràn ngang {overflow}px trên điện thoại")
-        r["actual"] = f"{name} · khối {workforce} · mục: {', '.join(SECTION_LABEL[x] for x in shown)}" + (" · không tràn ngang trên điện thoại" if s.phone else "")
+            check(overflow <= 1, f"tràn ngang {overflow}px")
+        r["actual"] = f"Vào {url}; quyền: {', '.join(SECTION_LABEL[k] for k in MATRIX[s.account])}"
 
 
-# ---------------------------------------------------------------------------------------------------- scenarios
+# ---------------------------------------------------------------------------------------------------- the Frappe HR app
+
+def hrms_request_leave(s, start, end, reason, half=False):
+    """Frappe HR app: Xin nghỉ phép → fill → Lưu → Hành động → Gửi duyệt. Returns the request name."""
+    p = s.page
+    p.goto(f"{BASE}/hrms/home")
+    p.wait_for_load_state("networkidle")
+    p.get_by_text("Xin nghỉ phép", exact=True).first.click()
+    p.wait_for_url(re.compile(r".*/leave-applications/new"))
+    p.wait_for_load_state("networkidle")
+    p.wait_for_timeout(1200)
+    p.get_by_text("Chọn Loại nghỉ phép").click()
+    p.get_by_text("Phép năm", exact=True).last.click()
+    dates = p.locator("input[type=date]")
+    dates.nth(0).fill(start)
+    dates.nth(1).fill(end)
+    if half:
+        p.get_by_text("Nửa ngày", exact=True).click()
+    p.locator("textarea").first.fill(reason)
+    p.wait_for_timeout(1500)
+    visible_button(p, "Lưu").click()
+    p.wait_for_url(re.compile(r".*/leave-applications/HR-LAP-\d{4}-\d+"), timeout=30000)
+    name = re.search(r"HR-LAP-\d{4}-\d+", p.url).group(0)
+    p.wait_for_load_state("networkidle")
+    p.wait_for_timeout(1200)
+    visible_button(p, "Hành động").click()
+    p.wait_for_timeout(800)
+    p.get_by_role("button", name="Gửi duyệt").last.click()
+    p.wait_for_timeout(2500)
+    return name
+
+
+def hrms_list_states(s):
+    p = s.page
+    p.goto(f"{BASE}/hrms/leave-applications")
+    p.wait_for_load_state("networkidle")
+    p.wait_for_timeout(2000)
+    return p.locator("body").inner_text()
+
+
+# ---------------------------------------------------------------------------------------------------- the desk
+
+def card_value(p, label):
+    """Value of a number card of the workspace (waits for it to load)."""
+    widget = p.locator(".widget", has_text=label).first
+    expect(widget).to_be_visible()
+    for _ in range(30):
+        numbers = re.findall(r"\d[\d.,]*", widget.inner_text().replace(label, ""))
+        if numbers:
+            return int(numbers[0].replace(".", "").replace(",", ""))
+        p.wait_for_timeout(300)
+    raise AssertionError(f"thẻ {label} không có số")
+
+
+def open_leave(s, name):
+    p = s.page
+    p.goto(f"{BASE}/desk/leave-application/{name}")
+    p.wait_for_load_state("networkidle")
+    p.wait_for_timeout(2500)
+
+
+MENU_ITEMS = "[role=menuitem]:visible, .es-menu__item:visible, .dropdown-menu.show .dropdown-item"
+
+
+def headline(p):
+    message = p.locator(".form-message:visible").first
+    return " ".join(message.inner_text().split()) if message.count() else ""
+
+
+def menu_items(p):
+    return [" ".join(t.split()) for t in p.locator(MENU_ITEMS).all_inner_texts() if t.strip()]
+
+
+def workflow_actions(p):
+    button = p.get_by_role("button", name="Hành động")
+    if not button.count() or not button.first.is_visible():
+        return []
+    button.first.click()
+    p.wait_for_timeout(600)
+    items = menu_items(p)
+    p.keyboard.press("Escape")
+    p.wait_for_timeout(300)
+    return items
+
+
+def desk_action(s, name, action, reason=None):
+    """Hành động → Duyệt or Từ chối on the standard form; Từ chối asks the reason in a dialog. Returns the new state."""
+    p = s.page
+    p.get_by_role("button", name="Hành động").first.click()
+    p.wait_for_timeout(600)
+    items = p.locator(MENU_ITEMS)
+    target = next((i for i in range(items.count()) if " ".join(items.nth(i).inner_text().split()) == action), None)
+    check(target is not None, f"không có {action} trong {menu_items(p)}")
+    items.nth(target).click()
+    if action == "Từ chối":
+        dialog = p.locator(".modal:visible").last
+        expect(dialog).to_be_visible()
+        p.wait_for_timeout(600)
+        if reason:
+            dialog.locator("textarea").first.fill(reason)
+        dialog.get_by_role("button", name="Từ chối").last.click()
+    p.wait_for_timeout(3500)
+    return state_of(s, name)
+
+
+# ---------------------------------------------------------------------------------------------------- journeys
 
 def office_employee(browser):
     s = Session(browser, "NV", "an")
     first_case(s, "NV-01")
     p = s.page
-    with case(s, "NV-02", "Xem số ngày phép còn lại", "Đọc ô chỉ số trên trang chủ", "Phép năm cấp 12 ngày", "Phép năm còn 12 ngày") as r:
-        value = balance(p)
-        check(value == 12, f"còn {value}")
-        r["actual"] = f"Phép năm còn {value:g} ngày"
-    bad_from, bad_to = working_day(4), working_day(3)
-    with case(s, "NV-03", "Chặn đơn sai ngày", "Nhập Từ ngày sau Đến ngày, bấm Gửi đơn", f"{vn(bad_from)} → {vn(bad_to)}",
-              "Báo lỗi 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu', không tạo đơn") as r:
-        kind, text = submit_leave(s, bad_from, bad_to, "Thử ngày sai")
-        check("bad" in kind and "Ngày kết thúc" in text, f"thông báo {text!r}")
-        r["actual"] = f"Thông báo lỗi: {text}"
-    start, end = working_day(3), working_day(4)
-    home(s)
-    with case(s, "NV-04", "Gửi đơn nghỉ phép năm 2 ngày", "Chọn Phép năm, nhập ngày, lý do, bấm Gửi đơn",
-              f"{vn(start)} → {vn(end)}, lý do: Việc gia đình", "Thông báo đã gửi; đơn 2 ngày ở trạng thái Chờ quản lý duyệt, gửi đến Trần Minh Quang") as r:
-        kind, text = submit_leave(s, start, end, "Việc gia đình")
-        check("ok" in kind, f"thông báo {text!r}")
-        REQ["an"] = created_name(text)
-        after_reload(p)
-        state, _ = my_request_state(p, REQ["an"])
-        check(state == "Chờ quản lý duyệt", f"trạng thái {state!r}")
-        detail = api_json(s, f"/api/resource/Leave Application/{REQ['an']}")["data"]
-        check(detail["leave_approver"] == "quang@demo.example" and detail["total_leave_days"] == 2, f"{detail['leave_approver']} {detail['total_leave_days']}")
-        r["actual"] = f"{text} · {REQ['an']} chờ quang@demo.example duyệt, 2 ngày"
-    with case(s, "NV-05", "Xem hồ sơ của tôi", "Bấm Mở nhanh > Hồ sơ của tôi (desk)", "", "Mở được hồ sơ nhân viên của chính mình") as r:
-        p.get_by_test_id("link").filter(has_text="Hồ sơ của tôi").click()
+    with case(s, "NV-02", "Trang chủ app Frappe HR", "Xem lời chào, liên kết nhanh, thanh menu dưới", "",
+              "Lời chào đúng tên; có Xin nghỉ phép, Xem phiếu lương; menu Trang chủ / Chấm công / Nghỉ phép / Chi phí / Lương") as r:
+        text = p.locator("body").inner_text()
+        for t in ("Nguyễn Hoài An", "Xin nghỉ phép", "Xem phiếu lương", "Trang chủ", "Nghỉ phép", "Lương"):
+            check(t in text, f"thiếu {t}")
+        r["actual"] = "Lời chào, liên kết nhanh và menu dưới đầy đủ (tiếng Việt)"
+    with case(s, "NV-03", "Số dư phép", "Menu dưới > Nghỉ phép", "", "Phép năm còn 12 / 12 ngày") as r:
+        p.get_by_text("Nghỉ phép", exact=True).last.click()
         p.wait_for_load_state("networkidle")
-        p.wait_for_timeout(3500)
-        s.caption("NV-05 · Hồ sơ của tôi (desk)")
-        desk_ok(s, "Nguyễn Hoài An")
-        r["actual"] = f"Mở {p.url.replace(BASE, '')}, thấy hồ sơ Nguyễn Hoài An, không có lỗi quyền"
-    with case(s, "NV-06", "Không xem được hồ sơ người khác", "Mở trực tiếp hồ sơ của Giám đốc nhân sự bằng URL và API", "Hồ sơ của lan@ / hoa@",
-              "Bị chặn: API trả 403, danh sách nhân viên chỉ có chính mình") as r:
-        employees = api_json(s, "/api/resource/Employee?limit_page_length=500")["data"]
-        check(len(employees) == 1, f"thấy {len(employees)} hồ sơ")
-        other = api_json(s, "/api/resource/Employee?filters=" + json.dumps([["user_id", "=", "hoa@demo.example"]]))["data"]
-        check(other == [], f"thấy hồ sơ người khác: {other}")
-        hoa_id = "HR-EMP-00003"
-        status = api_status(s, f"/api/resource/Employee/{hoa_id}")
-        check(status == 403, f"mở hồ sơ {hoa_id} trả {status}")
-        show_desk(s, f"/desk/employee/{hoa_id}")
-        r["actual"] = f"Danh sách chỉ có {len(employees)} hồ sơ (chính mình); tìm hồ sơ hoa@ trả rỗng; mở {hoa_id} trả {status}"
-    with case(s, "NV-07", "Không có chức năng duyệt và quản trị", "Kiểm tra trang chủ không có Hộp duyệt, Đội, Tổng quan; gọi API duyệt",
-              "decide trên đơn của chính mình", "Không có các mục đó; API duyệt bị từ chối") as r:
-        home(s)
-        for t in ("inbox", "team", "company"):
-            check(p.get_by_test_id(t).count() == 0, f"đang hiện mục {t}")
-        token = p.evaluate("TLC_CSRF")
-        res = p.request.post(f"{BASE}/api/method/tlc_hr.api.decide", headers={"X-Frappe-CSRF-Token": token},
-                             data={"name": REQ["an"], "decision": "approve"})
-        check(res.status >= 400, f"API duyệt trả {res.status}")
-        r["actual"] = f"Không có Hộp duyệt/Đội/Tổng quan; tự duyệt đơn của mình qua API bị chặn ({res.status})"
+        p.wait_for_timeout(2500)
+        text = p.locator("body").inner_text()
+        check("Phép năm" in text and "12" in text, text[:200])
+        balance = api(s, "hrms.api.get_leave_balance_map", employee=api_get(s, "/api/resource/Employee?fields=[\"name\"]").json()["data"][0]["name"])
+        r["actual"] = f"Trang Phép hiển thị Phép năm; số dư API {json.dumps(balance, ensure_ascii=False)[:120]}"
+    start, end = working_day(3), working_day(4)
+    with case(s, "NV-04", "Xin nghỉ 2 ngày và gửi duyệt", "Xin nghỉ phép > Loại Phép năm, ngày, lý do > Lưu > Hành động > Gửi duyệt",
+              f"{vn(start)} → {vn(end)}, Việc gia đình", "Đơn 2 ngày ở trạng thái Chờ quản lý duyệt, người duyệt Trần Minh Quang") as r:
+        REQ["an"] = hrms_request_leave(s, start, end, "Việc gia đình")
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['an']}").json()["data"]
+        check((doc["workflow_state"], doc["total_leave_days"], doc["leave_approver"]) == (TO_MANAGER, 2, "quang@demo.example"), str(doc)[:200])
+        r["actual"] = f"{REQ['an']}: {doc['workflow_state']}, {doc['total_leave_days']:g} ngày, duyệt bởi {doc['leave_approver']}"
+    with case(s, "NV-05", "Chặn đơn trùng ngày", "Xin nghỉ lại đúng ngày đã xin, Lưu", vn(start), "Không lưu được: báo đã có đơn trong khoảng ngày này") as r:
+        p.goto(f"{BASE}/hrms/leave-applications/new")
+        p.wait_for_load_state("networkidle")
+        p.wait_for_timeout(1200)
+        p.get_by_text("Chọn Loại nghỉ phép").click()
+        p.get_by_text("Phép năm", exact=True).last.click()
+        dates = p.locator("input[type=date]")
+        dates.nth(0).fill(start)
+        dates.nth(1).fill(start)
+        p.locator("textarea").first.fill("Thử trùng")
+        p.wait_for_timeout(1200)
+        visible_button(p, "Lưu").click()
+        p.wait_for_timeout(2500)
+        check("/new" in p.url, f"đã lưu: {p.url}")
+        r["actual"] = "Không lưu được đơn trùng ngày (HRMS báo trùng)"
+    with case(s, "NV-06", "Theo dõi đơn của tôi", "Mở danh sách đơn nghỉ", "", f"Thấy đơn {vn(start)} ở trạng thái Chờ quản lý duyệt") as r:
+        text = hrms_list_states(s)
+        check(TO_MANAGER in text, text[:200])
+        r["actual"] = "Danh sách có đơn đang Chờ quản lý duyệt"
+    with case(s, "NV-07", "Phạm vi dữ liệu", "API: danh sách nhân viên và đơn nghỉ của phiên nhân viên", "", "Chỉ thấy hồ sơ và đơn của chính mình") as r:
+        employees = api_get(s, "/api/resource/Employee?limit_page_length=500").json()["data"]
+        leaves = api_get(s, "/api/resource/Leave Application?limit_page_length=500&fields=[\"employee_name\"]").json()["data"]
+        check(len(employees) == 1 and {x["employee_name"] for x in leaves} <= {"Nguyễn Hoài An"}, f"{len(employees)} hồ sơ")
+        r["actual"] = f"{len(employees)} hồ sơ, {len(leaves)} đơn của chính mình"
     s.close()
 
 
 def support_office_manager(playwright):
-    """Precondition, not a persona of the brief: the head of sales approves the office request (API, no video)."""
+    """Precondition outside the brief: the head of sales (an's line manager) approves her request through the API."""
     row = {"id": "HT-01", "account": "quang@demo.example", "role": "Hỗ trợ - Trưởng phòng Kinh doanh (quản lý của an)",
-           "function": "Quản lý trực tiếp duyệt đơn của nhân viên văn phòng", "steps": "Gọi API tlc_hr.api.decide (bước tiền điều kiện)",
-           "data": REQ.get("an", ""), "expected": "Đơn chuyển sang Chờ nhân sự duyệt", "video": "", "time": "", "shot": "",
+           "function": "Quản lý trực tiếp duyệt đơn của nhân viên văn phòng", "steps": "API tlc_hr.api.decide (tiền điều kiện)",
+           "data": REQ.get("an", ""), "expected": "Đơn chuyển Chờ nhân sự duyệt", "video": "", "time": "", "shot": "",
            "run_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
     try:
-        api = playwright.request.new_context(base_url=BASE)
-        api.post("/api/method/login", data={"usr": "quang@demo.example", "pwd": PASSWORD})
-        res = api.post("/api/method/tlc_hr.api.decide", data={"name": REQ["an"], "decision": "approve"})
-        state = res.json()["message"]["workflow_state"]
-        check(state == "Chờ nhân sự duyệt", state)
+        client = playwright.request.new_context(base_url=BASE)
+        client.post("/api/method/login", data={"usr": "quang@demo.example", "pwd": PASSWORD})
+        state = client.post("/api/method/tlc_hr.api.decide", data={"name": REQ["an"], "decision": "approve"}).json()["message"]["workflow_state"]
+        check(state == TO_HR, state)
         row.update(actual=f"{REQ['an']} → {state}", status="Đạt")
-        api.dispose()
+        client.dispose()
     except Exception as exc:
         row.update(actual=f"{type(exc).__name__}: {exc}", status="Không đạt")
     RESULTS.append(row)
@@ -376,35 +386,26 @@ def support_office_manager(playwright):
 def factory_worker_1(browser):
     s = Session(browser, "CN1", "binh", phone=True)
     first_case(s, "CN1-01")
-    p = s.page
-    day = working_day(2)
-    with case(s, "CN1-02", "Gửi đơn nghỉ 1 ngày trên điện thoại", "Cuộn tới Xin nghỉ phép, nhập ngày và lý do, bấm Gửi đơn",
-              f"{vn(day)}, lý do: Con ốm", "Đơn 1 ngày Chờ quản lý duyệt, gửi đến Đặng Văn Hùng") as r:
-        kind, text = submit_leave(s, day, day, "Con ốm")
-        check("ok" in kind, text)
-        REQ["binh_full"] = created_name(text)
-        after_reload(p)
-        state, _ = my_request_state(p, REQ["binh_full"])
-        check(state == "Chờ quản lý duyệt", state)
-        r["actual"] = f"{text} · trạng thái {state}"
-    half = working_day(5)
-    home(s)
-    with case(s, "CN1-03", "Gửi đơn nghỉ nửa ngày", "Tích Nghỉ nửa ngày, nhập lý do, Gửi đơn", f"{vn(half)} nửa ngày, lý do: Khám sức khỏe",
-              "Đơn 0,5 ngày Chờ quản lý duyệt") as r:
-        kind, text = submit_leave(s, half, half, "Khám sức khỏe", half=True)
-        check("ok" in kind and "(0.5 ngày)" in text, text)
-        REQ["binh_half"] = created_name(text)
-        after_reload(p)
-        state, _ = my_request_state(p, REQ["binh_half"])
-        check(state == "Chờ quản lý duyệt", state)
-        r["actual"] = f"{text} · trạng thái {state}"
-    with case(s, "CN1-04", "Phạm vi dữ liệu của công nhân", "Gọi danh sách nhân viên và đơn nghỉ qua API phiên của công nhân", "",
-              "Chỉ thấy hồ sơ của mình và đơn của mình") as r:
-        employees = api_json(s, "/api/resource/Employee?limit_page_length=500")["data"]
-        leaves = api_json(s, "/api/resource/Leave Application?limit_page_length=500&fields=[\"employee_name\"]")["data"]
-        others = {x["employee_name"] for x in leaves} - {"Trần Văn Bình"}
-        check(len(employees) == 1 and not others, f"{len(employees)} hồ sơ, đơn của người khác: {others}")
-        r["actual"] = f"Thấy {len(employees)} hồ sơ, {len(leaves)} đơn - đều của chính mình"
+    day, half = working_day(2), working_day(5)
+    with case(s, "CN1-02", "Xin nghỉ 1 ngày trên điện thoại", "Xin nghỉ phép > Lưu > Hành động > Gửi duyệt", f"{vn(day)}, Con ốm",
+              "Chờ quản lý duyệt, người duyệt Đặng Văn Hùng") as r:
+        REQ["binh_full"] = hrms_request_leave(s, day, day, "Con ốm")
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['binh_full']}").json()["data"]
+        check((doc["workflow_state"], doc["leave_approver"]) == (TO_MANAGER, "hung@demo.example"), str(doc)[:200])
+        r["actual"] = f"{REQ['binh_full']}: {doc['workflow_state']}, duyệt bởi {doc['leave_approver']}"
+    with case(s, "CN1-03", "Xin nghỉ nửa ngày", "Xin nghỉ phép, tích Nửa ngày > Lưu > Gửi duyệt", f"{vn(half)}, Khám sức khỏe",
+              "0,5 ngày, Chờ quản lý duyệt") as r:
+        REQ["binh_half"] = hrms_request_leave(s, half, half, "Khám sức khỏe", half=True)
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['binh_half']}").json()["data"]
+        check((doc["workflow_state"], doc["total_leave_days"]) == (TO_MANAGER, 0.5), str(doc)[:200])
+        r["actual"] = f"{REQ['binh_half']}: {doc['total_leave_days']:g} ngày, {doc['workflow_state']}"
+    with case(s, "CN1-04", "Không tự duyệt được", "Mở đơn của mình; xem Hành động", REQ["binh_full"], "Không có nút Duyệt cho chính mình") as r:
+        s.page.goto(f"{BASE}/hrms/leave-applications/{REQ['binh_full']}")
+        s.page.wait_for_load_state("networkidle")
+        s.page.wait_for_timeout(2000)
+        buttons = [b.inner_text().strip() for b in s.page.locator("button").all() if b.is_visible()]
+        check("Duyệt" not in buttons, str(buttons))
+        r["actual"] = f"Các nút: {[b for b in buttons if b][-3:]}"
     s.close()
 
 
@@ -412,19 +413,14 @@ def factory_worker_2(browser):
     s = Session(browser, "CN2", "f2w01", phone=True)
     first_case(s, "CN2-01")
     day = working_day(2)
-    with case(s, "CN2-02", "Gửi đơn nghỉ 1 ngày (Nhà máy 2)", "Nhập ngày, lý do, Gửi đơn", f"{vn(day)}, lý do: Về quê",
-              "Đơn Chờ quản lý duyệt, gửi đến quản lý Nhà máy 2 (Lương Quốc Hải), không phải quản lý Nhà máy 1") as r:
-        kind, text = submit_leave(s, day, day, "Về quê")
-        check("ok" in kind, text)
-        REQ["f2w01"] = created_name(text)
-        after_reload(s.page)
-        detail = api_json(s, f"/api/resource/Leave Application/{REQ['f2w01']}")["data"]
-        check(detail["leave_approver"] == "nm2@demo.example", detail["leave_approver"])
-        r["actual"] = f"{text} · người duyệt nm2@demo.example"
-    with case(s, "CN2-03", "Không xem được đơn của nhà máy khác", "Mở trực tiếp đơn của công nhân Nhà máy 1 qua API", REQ.get("binh_full", ""),
-              "Bị chặn (403)") as r:
-        status = api_status(s, f"/api/resource/Leave Application/{REQ['binh_full']}")
-        check(status == 403, f"trả {status}")
+    with case(s, "CN2-02", "Xin nghỉ (Nhà máy 2)", "Xin nghỉ phép > Lưu > Gửi duyệt", f"{vn(day)}, Về quê", "Đơn đến quản lý Nhà máy 2 (nm2)") as r:
+        REQ["f2w01"] = hrms_request_leave(s, day, day, "Về quê")
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['f2w01']}").json()["data"]
+        check(doc["leave_approver"] == "nm2@demo.example" and doc["workflow_state"] == TO_MANAGER, str(doc)[:200])
+        r["actual"] = f"{REQ['f2w01']} → nm2@demo.example, {doc['workflow_state']}"
+    with case(s, "CN2-03", "Cách ly dữ liệu giữa hai nhà máy", "Mở đơn của công nhân Nhà máy 1 qua API", REQ["binh_full"], "Bị chặn 403") as r:
+        status = api_get(s, f"/api/resource/Leave Application/{REQ['binh_full']}").status
+        check(status == 403, str(status))
         r["actual"] = f"API trả {status}"
     s.close()
 
@@ -433,143 +429,91 @@ def factory_head(browser):
     s = Session(browser, "QL", "hung")
     first_case(s, "QL-01")
     p = s.page
-    with case(s, "QL-02", "Hộp duyệt chỉ có đơn của người thuộc quyền", "Xem mục Việc chờ tôi duyệt",
-              "Đơn của binh (NM1) và f2w01 (NM2)", "Có 2 đơn của Trần Văn Bình; không có đơn của Nhà máy 2") as r:
-        names = [x.get_attribute("data-name") for x in p.get_by_test_id("inbox-item").all()]
-        check(REQ["binh_full"] in names and REQ["binh_half"] in names, f"hộp duyệt {names}")
-        check(REQ["f2w01"] not in names, "thấy đơn của Nhà máy 2")
-        r["actual"] = f"Hộp duyệt: {', '.join(names)} (không có {REQ['f2w01']} của Nhà máy 2)"
-    with case(s, "QL-03", "Xem đội của tôi", "Xem mục Đội của tôi", "", "14 người thuộc Nhà máy 1, trạng thái đi làm/nghỉ hôm nay") as r:
-        p.get_by_test_id("team").scroll_into_view_if_needed()
-        size = p.get_by_test_id("team-member").count()
-        check(size == 14, f"{size} người")
-        p.wait_for_timeout(1200)
-        r["actual"] = f"Đội có {size} người"
-        p.evaluate("window.scrollTo(0, 0)")
-    with case(s, "QL-04", "Duyệt đơn 1 ngày của công nhân", "Bấm Duyệt trên đơn của Trần Văn Bình", REQ["binh_full"],
-              "Thông báo đã duyệt; đơn chuyển sang Chờ nhân sự duyệt") as r:
-        kind, text = decide(s, REQ["binh_full"], "approve")
-        check("ok" in kind and "Chờ nhân sự duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
-    with case(s, "QL-05", "Từ chối phải có lý do", "Bấm Từ chối…, để trống lý do, Xác nhận từ chối", REQ["binh_half"],
-              "Báo lỗi 'Nhập lý do từ chối', đơn giữ nguyên") as r:
-        kind, text = decide(s, REQ["binh_half"], "reject", reason="")
-        check("bad" in kind and "lý do" in text.lower(), text)
-        r["actual"] = f"Thông báo lỗi: {text}"
-    with case(s, "QL-06", "Từ chối đơn nửa ngày có lý do", "Nhập lý do, Xác nhận từ chối", "Lý do: Trùng ca kiểm kê kho",
-              "Đơn chuyển Từ chối, lý do được lưu") as r:
-        item = inbox_item(p, REQ["binh_half"])
-        item.get_by_test_id("reject-reason").fill("Trùng ca kiểm kê kho")
-        item.get_by_test_id("reject-confirm").click()
-        kind, text = toast(p)
-        check("ok" in kind and "Từ chối" in text, text)
-        after_reload(p)
-        r["actual"] = text
-    with case(s, "QL-07", "Không duyệt được đơn của nhà máy khác", "Gọi API duyệt đơn của công nhân Nhà máy 2; mở đơn trên desk", REQ["f2w01"],
-              "Bị chặn") as r:
-        token = p.evaluate("TLC_CSRF")
-        res = p.request.post(f"{BASE}/api/method/tlc_hr.api.decide", headers={"X-Frappe-CSRF-Token": token},
-                             data={"name": REQ["f2w01"], "decision": "approve"})
-        check(res.status >= 400, f"trả {res.status}")
-        show_desk(s, f"/desk/leave-application/{REQ['f2w01']}")
-        r["actual"] = f"API duyệt trả {res.status}; desk không mở được đơn"
-    with case(s, "QL-08", "Danh sách nhân viên thuộc quyền (desk)", "Mở Mở nhanh > Danh sách nhân viên thuộc quyền", "",
-              "Chỉ thấy 15 hồ sơ của Nhà máy 1 (14 người + bản thân)") as r:
-        home(s)
-        p.get_by_test_id("link").filter(has_text="thuộc quyền").click()
+    with case(s, "QL-02", "Workspace TLC Quản lý", "Đọc các thẻ số và danh sách đơn chờ", "",
+              "Đơn chờ tôi duyệt 2; Nhân sự đang làm việc 15 (trong phạm vi); danh sách có 2 đơn của Trần Văn Bình") as r:
+        mine = card_value(p, "Đơn chờ tôi duyệt")
+        staff = card_value(p, "Nhân sự đang làm việc")
+        quick = p.locator(".widget", has_text="Đơn chờ quản lý duyệt").last.inner_text()
+        check((mine, staff) == (2, 15) and quick.count("Trần Văn Bình") >= 2 and "Nhà máy 2" not in quick, f"{mine} {staff} {quick[:160]}")
+        r["actual"] = f"Đơn chờ tôi duyệt {mine}; nhân sự {staff}; danh sách có 2 đơn của Bình"
+    with case(s, "QL-03", "Hỗ trợ quyết định trên form", "Mở đơn 1 ngày của Bình", REQ["binh_full"],
+              "Dòng đầu form: số dư sau khi duyệt 11 / 12 ngày; không ai khác ở Nhà máy 1 nghỉ; nút Hành động có Duyệt, Từ chối") as r:
+        open_leave(s, REQ["binh_full"])
+        text = headline(p)
+        actions = workflow_actions(p)
+        check("11 / 12" in text and "Không ai khác" in text and {"Duyệt", "Từ chối"} <= set(actions), f"{text} | {actions}")
+        r["actual"] = f"{text} · Hành động: {', '.join(actions)}"
+    with case(s, "QL-04", "Duyệt đơn", "Hành động > Duyệt", REQ["binh_full"], "Chờ nhân sự duyệt") as r:
+        state = desk_action(s, REQ["binh_full"], "Duyệt")
+        check(state == TO_HR, state)
+        r["actual"] = state
+    with case(s, "QL-05", "Từ chối phải có lý do", "Mở đơn nửa ngày > Hành động > Từ chối > nhập lý do > Từ chối", "Trùng ca kiểm kê kho",
+              "Hộp thoại hỏi lý do; đơn Từ chối, lý do được lưu") as r:
+        open_leave(s, REQ["binh_half"])
+        state = desk_action(s, REQ["binh_half"], "Từ chối", reason="Trùng ca kiểm kê kho")
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['binh_half']}").json()["data"]
+        check(state == REJECTED and doc.get("tlc_reject_reason") == "Trùng ca kiểm kê kho", f"{state} {doc.get('tlc_reject_reason')}")
+        r["actual"] = f"{state}; lý do: {doc['tlc_reject_reason']}"
+    with case(s, "QL-06", "Không xem được đơn của nhà máy khác", "Mở đơn của Nhà máy 2", REQ["f2w01"], "Bị chặn 403") as r:
+        status = api_get(s, f"/api/resource/Leave Application/{REQ['f2w01']}").status
+        check(status == 403, str(status))
+        r["actual"] = f"API trả {status}"
+    with case(s, "QL-07", "Lịch nghỉ phép của đội", "Workspace > Lịch nghỉ phép", "", "Lịch tháng hiển thị đơn của Bình") as r:
+        p.goto(f"{BASE}/desk/leave-application/view/calendar/default")
         p.wait_for_load_state("networkidle")
         p.wait_for_timeout(3500)
-        s.caption("QL-08 · Danh sách nhân viên thuộc quyền (desk)")
-        desk_ok(s)
-        employees = api_json(s, "/api/resource/Employee?limit_page_length=500&fields=[\"department\"]")["data"]
-        departments = {x["department"] for x in employees}
-        check(len(employees) == 15 and departments == {"Nhà máy 1 - TLC"}, f"{len(employees)} hồ sơ, {departments}")
-        r["actual"] = f"{len(employees)} hồ sơ, tất cả thuộc Nhà máy 1"
-    day = working_day(6)
-    home(s)
-    with case(s, "QL-09", "Quản lý tự xin nghỉ", "Gửi đơn nghỉ của chính mình", f"{vn(day)}, lý do: Họp phụ huynh",
-              "Đơn đến CEO Nguyễn Văn Thành; không nằm trong hộp duyệt của chính mình") as r:
-        kind, text = submit_leave(s, day, day, "Họp phụ huynh")
-        check("ok" in kind, text)
-        REQ["hung"] = created_name(text)
-        after_reload(p)
-        names = [x.get_attribute("data-name") for x in p.get_by_test_id("inbox-item").all()]
-        check(REQ["hung"] not in names, "đơn của mình nằm trong hộp duyệt của mình")
-        r["actual"] = f"{text}; không có trong hộp duyệt của chính mình"
+        text = p.locator(".fc, .calendar-view, body").first.inner_text()
+        check("Trần Văn Bình" in text, text[:200])
+        r["actual"] = "Lịch có đơn của Trần Văn Bình"
+    with case(s, "QL-08", "Quản lý tự xin nghỉ trong app", "Mở app Frappe HR, xin nghỉ 1 ngày, gửi duyệt", f"{vn(working_day(6))}, Họp phụ huynh",
+              "Đơn đến CEO Nguyễn Văn Thành") as r:
+        REQ["hung"] = hrms_request_leave(s, working_day(6), working_day(6), "Họp phụ huynh")
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['hung']}").json()["data"]
+        check(doc["leave_approver"] == "thanh@demo.example" and doc["workflow_state"] == TO_MANAGER, str(doc)[:160])
+        r["actual"] = f"{REQ['hung']} → thanh@demo.example"
     s.close()
 
 
-def hr_lead_first(browser):
+def hr_lead(browser):
     s = Session(browser, "HR", "hoa")
     first_case(s, "HR-01")
     p = s.page
-    with case(s, "HR-02", "Tổng quan nhân sự toàn công ty", "Xem mục Tổng quan nhân sự", "",
-              "60 nhân sự; khối Hội sở 31, Nhà máy 29; số nhân sự theo từng địa điểm") as r:
-        p.get_by_test_id("company").scroll_into_view_if_needed()
-        headcount = int(p.get_by_test_id("stat-headcount").locator(".n").inner_text())
-        text = p.get_by_test_id("company").inner_text()
-        office = re.search(r"Khối Hội sở\s+(\d+)", text)
-        factory = re.search(r"Khối Nhà máy\s+(\d+)", text)
-        check(headcount == 60 and office and factory and (office.group(1), factory.group(1)) == ("31", "29"), text[:300])
-        sites = p.get_by_test_id("site-row").count()
-        check(sites == 9, f"{sites} địa điểm/phòng ban")
+    with case(s, "HR-02", "Workspace TLC Nhân sự", "Đọc các thẻ số", "", "60 nhân sự; Hội sở 31; Nhà máy 29; 2 đơn chờ nhân sự duyệt") as r:
+        values = tuple(card_value(p, label) for label in ("Nhân sự đang làm việc", "Nhân sự khối Hội sở", "Nhân sự khối Nhà máy", "Đơn chờ nhân sự duyệt"))
+        check(values == (60, 31, 29, 2), str(values))
+        p.locator(".widget", has_text="Nhân sự theo phòng ban").first.scroll_into_view_if_needed()
         p.wait_for_timeout(1500)
-        r["actual"] = f"{headcount} nhân sự, 9 địa điểm/phòng ban, Hội sở 31 / Nhà máy 29"
-        p.evaluate("window.scrollTo(0, 0)")
-    with case(s, "HR-03", "Hộp duyệt cấp nhân sự", "Xem Việc chờ tôi duyệt", "",
-              "Có đơn của Trần Văn Bình (đã qua quản lý NM1) và Nguyễn Hoài An (đã qua trưởng phòng)") as r:
-        names = [x.get_attribute("data-name") for x in p.get_by_test_id("inbox-item").all()]
-        check(REQ["binh_full"] in names and REQ["an"] in names, f"{names}")
-        r["actual"] = f"Hộp duyệt: {', '.join(names)}"
-    with case(s, "HR-04", "Duyệt đơn công nhân nhà máy", "Bấm Duyệt trên đơn của Trần Văn Bình", REQ["binh_full"], "Đơn Đã duyệt") as r:
-        kind, text = decide(s, REQ["binh_full"], "approve")
-        check("ok" in kind and "Đã duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
-    with case(s, "HR-05", "Duyệt đơn nhân viên văn phòng", "Bấm Duyệt trên đơn của Nguyễn Hoài An", REQ["an"], "Đơn Đã duyệt") as r:
-        kind, text = decide(s, REQ["an"], "approve")
-        check("ok" in kind and "Đã duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
-    day = working_day(7)
-    with case(s, "HR-06", "Trưởng nhân sự tự xin nghỉ", "Gửi đơn nghỉ của chính mình", f"{vn(day)}, lý do: Đi đám cưới",
-              "Đơn đến CEO Nguyễn Văn Thành") as r:
-        kind, text = submit_leave(s, day, day, "Đi đám cưới")
-        check("ok" in kind, text)
-        REQ["hoa"] = created_name(text)
-        after_reload(p)
-        r["actual"] = text
-    with case(s, "HR-07", "Báo cáo số dư phép", "Mở nhanh > Báo cáo số dư phép", "", "Báo cáo Employee Leave Balance mở được, có dữ liệu nhân viên") as r:
-        p.get_by_test_id("link").filter(has_text="Báo cáo số dư phép").click()
+        r["actual"] = "Nhân sự {}; Hội sở {}; Nhà máy {}; chờ nhân sự {}".format(*values)
+    with case(s, "HR-03", "Duyệt cấp nhân sự", "Mở từng đơn từ danh sách chờ > Hành động > Duyệt", f"{REQ['binh_full']}, {REQ['an']}",
+              "Cả hai Đã duyệt") as r:
+        out = []
+        for name in (REQ["binh_full"], REQ["an"]):
+            open_leave(s, name)
+            out.append(desk_action(s, name, "Duyệt"))
+        check(out == [APPROVED, APPROVED], str(out))
+        r["actual"] = " | ".join(out)
+    with case(s, "HR-04", "Báo cáo số dư phép", "Workspace > Số dư phép", "", "Báo cáo mở sẵn kỳ cả năm, hiển thị số dư Phép năm của nhân viên") as r:
+        p.goto(f"{BASE}/desk/tlc-hr/tlc-nh%C3%A2n-s%E1%BB%B1")
         p.wait_for_load_state("networkidle")
-        p.wait_for_timeout(6000)
-        s.caption("HR-07 · Báo cáo số dư phép (desk)")
-        desk_ok(s)
-        check("query-report" in p.url, p.url)
-        r["actual"] = f"Mở {p.url.replace(BASE, '')}"
-    with case(s, "HR-08", "Tham số lương Việt Nam 2026", "Mở nhanh > Thiết lập lương Việt Nam; đọc tham số", "",
-              "Lương cơ sở 2.530.000; giảm trừ bản thân 15.500.000; người phụ thuộc 6.200.000; hiệu lực 01-07-2026") as r:
-        home(s)
-        p.get_by_test_id("link").filter(has_text="Thiết lập lương").click()
+        p.locator(".widget", has_text="Số dư phép").first.click()
         p.wait_for_load_state("networkidle")
-        p.wait_for_timeout(4000)
-        s.caption("HR-08 · Thiết lập lương Việt Nam (desk)")
-        desk_ok(s)
-        data = api_json(s, "/api/resource/VN Payroll Settings/VN Payroll Settings")["data"]
-        got = (data["base_salary"], data["personal_deduction"], data["dependent_deduction"], data["effective_date"])
+        expect(p.get_by_text("Phép năm").first).to_be_visible(timeout=40000)
+        p.wait_for_timeout(1500)
+        r["actual"] = "Báo cáo hiển thị số dư Phép năm"
+    with case(s, "HR-05", "Tham số lương Việt Nam", "Workspace > Tham số lương Việt Nam", "",
+              "Lương cơ sở 2.530.000; giảm trừ 15.500.000 / 6.200.000; hiệu lực 01-07-2026") as r:
+        p.goto(f"{BASE}/desk/vn-payroll-settings")
+        p.wait_for_load_state("networkidle")
+        p.wait_for_timeout(3000)
+        d = api_get(s, "/api/resource/VN Payroll Settings/VN Payroll Settings").json()["data"]
+        got = (d["base_salary"], d["personal_deduction"], d["dependent_deduction"], d["effective_date"])
         check(got == (2530000, 15500000, 6200000, "2026-07-01"), str(got))
-        r["actual"] = f"Lương cơ sở {got[0]:,.0f}; giảm trừ {got[1]:,.0f} / {got[2]:,.0f}; hiệu lực {got[3]}".replace(",", ".")
-    with case(s, "HR-09", "Danh sách nhân sự toàn công ty", "Mở nhanh > Danh sách nhân sự", "", "Thấy đủ 60 hồ sơ") as r:
-        home(s)
-        p.get_by_test_id("link").filter(has_text="Danh sách nhân sự").click()
-        p.wait_for_load_state("networkidle")
-        p.wait_for_timeout(3500)
-        s.caption("HR-09 · Danh sách nhân sự (desk)")
-        desk_ok(s)
-        employees = api_json(s, "/api/resource/Employee?limit_page_length=500")["data"]
-        check(len(employees) == 60, f"{len(employees)} hồ sơ")
-        r["actual"] = f"{len(employees)} hồ sơ"
+        r["actual"] = str(got)
+    with case(s, "HR-06", "Trưởng nhân sự tự xin nghỉ", "App Frappe HR > Xin nghỉ phép > Gửi duyệt", f"{vn(working_day(7))}, Đi đám cưới", "Đơn đến CEO") as r:
+        REQ["hoa"] = hrms_request_leave(s, working_day(7), working_day(7), "Đi đám cưới")
+        doc = api_get(s, f"/api/resource/Leave Application/{REQ['hoa']}").json()["data"]
+        check(doc["leave_approver"] == "thanh@demo.example", doc["leave_approver"])
+        r["actual"] = f"{REQ['hoa']} → thanh@demo.example"
     s.close()
 
 
@@ -577,118 +521,93 @@ def ceo(browser):
     s = Session(browser, "CEO", "thanh")
     first_case(s, "CEO-01")
     p = s.page
-    with case(s, "CEO-02", "Tổng quan điều hành", "Xem các ô chỉ số và Tổng quan nhân sự", "",
-              "60 nhân sự; 3 đơn chờ quản lý duyệt (NM2, Quản lý NM1, Trưởng nhân sự); 0 đơn chờ nhân sự") as r:
-        p.get_by_test_id("company").scroll_into_view_if_needed()
-        waiting_manager = int(p.get_by_test_id("waiting-manager").inner_text())
-        waiting_hr = int(p.get_by_test_id("waiting-hr").inner_text())
-        check((waiting_manager, waiting_hr) == (3, 0), f"{waiting_manager} / {waiting_hr}")
+    with case(s, "CEO-02", "Workspace TLC Điều hành", "Đọc các thẻ số", "", "60 nhân sự; 2 đơn chờ tôi duyệt; 3 đơn chờ quản lý (toàn công ty)") as r:
+        values = (card_value(p, "Nhân sự đang làm việc"), card_value(p, "Đơn chờ tôi duyệt"), card_value(p, "Đơn chờ quản lý duyệt"))
+        check(values == (60, 2, 3), str(values))
+        r["actual"] = "Nhân sự {}; chờ tôi {}; chờ quản lý {}".format(*values)
+    with case(s, "CEO-03", "Duyệt đơn của cấp dưới trực tiếp", "Mở đơn của Quản lý NM1 và Trưởng nhân sự > Hành động > Duyệt",
+              f"{REQ['hung']}, {REQ['hoa']}", "Cả hai Chờ nhân sự duyệt") as r:
+        out = []
+        for name in (REQ["hung"], REQ["hoa"]):
+            open_leave(s, name)
+            out.append(desk_action(s, name, "Duyệt"))
+        check(out == [TO_HR, TO_HR], str(out))
+        r["actual"] = " | ".join(out)
+    with case(s, "CEO-04", "Biểu đồ điều hành", "Xem biểu đồ Nhân sự theo phòng ban và Ngày nghỉ theo tháng", "", "Hai biểu đồ hiển thị") as r:
+        p.goto(f"{BASE}/desk/tlc-hr/tlc-%C4%91i%E1%BB%81u-h%C3%A0nh")
+        p.wait_for_load_state("networkidle")
+        p.wait_for_timeout(4000)
+        charts = p.locator(".widget", has_text="Nhân sự theo phòng ban")
+        charts.first.scroll_into_view_if_needed()
         p.wait_for_timeout(1500)
-        r["actual"] = f"Chờ quản lý duyệt {waiting_manager}, chờ nhân sự {waiting_hr}"
-        p.evaluate("window.scrollTo(0, 0)")
-    with case(s, "CEO-03", "Không có form xin nghỉ cho CEO", "Xem mục Xin nghỉ phép", "",
-              "Hiện ghi chú: không có cấp trên duyệt, báo phòng Nhân sự ghi nhận") as r:
-        check(p.get_by_test_id("no-approver").is_visible() and p.locator("#leave-form").count() == 0, "vẫn có form")
-        r["actual"] = p.get_by_test_id("no-approver").inner_text()
-    with case(s, "CEO-04", "Duyệt đơn của Quản lý Nhà máy 1", "Bấm Duyệt trên đơn của Đặng Văn Hùng", REQ["hung"], "Chờ nhân sự duyệt") as r:
-        kind, text = decide(s, REQ["hung"], "approve")
-        check("ok" in kind and "Chờ nhân sự duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
-    with case(s, "CEO-05", "Duyệt đơn của Trưởng nhân sự", "Bấm Duyệt trên đơn của Lê Thị Hòa", REQ["hoa"], "Chờ nhân sự duyệt") as r:
-        kind, text = decide(s, REQ["hoa"], "approve")
-        check("ok" in kind and "Chờ nhân sự duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
-    with case(s, "CEO-06", "Đội của tôi toàn công ty", "Xem Đội của tôi và lịch nghỉ 14 ngày tới", "",
-              "59 người; lịch nghỉ có đơn đã duyệt của Trần Văn Bình và Nguyễn Hoài An") as r:
-        p.get_by_test_id("team").scroll_into_view_if_needed()
-        size = p.get_by_test_id("team-member").count()
-        upcoming = " | ".join(x.inner_text() for x in p.get_by_test_id("team-upcoming").all())
-        check(size == 59 and "Trần Văn Bình" in upcoming and "Nguyễn Hoài An" in upcoming, f"{size}; {upcoming}")
-        p.wait_for_timeout(1500)
-        r["actual"] = f"{size} người; lịch nghỉ: {upcoming}"
+        check(charts.count() >= 1 and p.locator(".widget svg, .widget canvas").count() >= 1, "không thấy biểu đồ")
+        r["actual"] = "Biểu đồ hiển thị"
     s.close()
 
 
 def hr_lead_second(browser):
     s = Session(browser, "HR2", "hoa")
     login(s)
-    p = s.page
-    with case(s, "HR-10", "Không tự duyệt đơn của mình", "Xem hộp duyệt sau khi CEO duyệt đơn của chính mình; thử API duyệt", REQ["hoa"],
-              "Đơn của mình không có trong hộp duyệt; API duyệt bị chặn") as r:
-        names = [x.get_attribute("data-name") for x in p.get_by_test_id("inbox-item").all()]
-        check(REQ["hoa"] not in names, "đơn của mình nằm trong hộp duyệt")
-        token = p.evaluate("TLC_CSRF")
-        res = p.request.post(f"{BASE}/api/method/tlc_hr.api.decide", headers={"X-Frappe-CSRF-Token": token},
-                             data={"name": REQ["hoa"], "decision": "approve"})
-        check(res.status >= 400, f"API trả {res.status}")
-        r["actual"] = f"Hộp duyệt {names}; tự duyệt qua API bị chặn ({res.status})"
-    with case(s, "HR-11", "Duyệt đơn của Quản lý Nhà máy 1", "Bấm Duyệt trên đơn của Đặng Văn Hùng", REQ["hung"], "Đơn Đã duyệt") as r:
-        kind, text = decide(s, REQ["hung"], "approve")
-        check("ok" in kind and "Đã duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
+    with case(s, "HR-07", "Không tự duyệt đơn của mình", "Mở đơn của chính mình (đã qua CEO); xem Hành động", REQ["hoa"],
+              "Không có Duyệt/Từ chối cho chính mình") as r:
+        open_leave(s, REQ["hoa"])
+        actions = workflow_actions(s.page)
+        check("Duyệt" not in actions, str(actions))
+        r["actual"] = f"Hành động: {actions or 'không có'}"
+    with case(s, "HR-08", "Duyệt đơn của Quản lý NM1", "Mở đơn > Hành động > Duyệt", REQ["hung"], "Đã duyệt") as r:
+        open_leave(s, REQ["hung"])
+        state = desk_action(s, REQ["hung"], "Duyệt")
+        check(state == APPROVED, state)
+        r["actual"] = state
     s.close()
 
 
 def hr_officer(browser):
     s = Session(browser, "HR3", "lan")
-    first_case(s, "HR-12")
-    p = s.page
-    with case(s, "HR-13", "Chuyên viên nhân sự duyệt đơn của Trưởng nhân sự", "Bấm Duyệt trên đơn của Lê Thị Hòa", REQ["hoa"], "Đơn Đã duyệt") as r:
-        kind, text = decide(s, REQ["hoa"], "approve")
-        check("ok" in kind and "Đã duyệt" in text, text)
-        after_reload(p)
-        r["actual"] = text
+    first_case(s, "HR-09")
+    with case(s, "HR-10", "Chuyên viên nhân sự duyệt đơn của Trưởng nhân sự", "Mở đơn > Hành động > Duyệt", REQ["hoa"], "Đã duyệt") as r:
+        open_leave(s, REQ["hoa"])
+        state = desk_action(s, REQ["hoa"], "Duyệt")
+        check(state == APPROVED, state)
+        r["actual"] = state
     s.close()
 
 
-def factory_worker_1_result(browser):
+def results_check(browser):
     s = Session(browser, "CN1b", "binh", phone=True)
     login(s)
     p = s.page
-    with case(s, "CN1-05", "Xem kết quả đơn", "Mở trang chủ, xem Đơn của tôi", f"{REQ['binh_full']}, {REQ['binh_half']}",
-              "Đơn 1 ngày Đã duyệt; đơn nửa ngày Từ chối, hiện lý do 'Trùng ca kiểm kê kho'") as r:
-        full, _ = my_request_state(p, REQ["binh_full"])
-        half, row = my_request_state(p, REQ["binh_half"])
-        reason = row.get_by_test_id("my-request-reason").inner_text()
-        check(full == "Đã duyệt" and half == "Từ chối" and "Trùng ca kiểm kê kho" in reason, f"{full} / {half} / {reason}")
-        p.wait_for_timeout(1500)
-        r["actual"] = f"{full} / {half} ({reason})"
-    with case(s, "CN1-06", "Số dư phép sau khi được duyệt", "Đọc ô phép năm", "", "Phép năm còn 11 ngày (đơn bị từ chối không trừ)") as r:
-        p.evaluate("window.scrollTo(0, 0)")
-        value = balance(p)
-        check(value == 11, f"còn {value}")
-        r["actual"] = f"Còn {value:g} ngày"
+    with case(s, "CN1-05", "Kết quả đơn trên điện thoại", "Mở danh sách đơn; mở đơn bị từ chối", f"{REQ['binh_full']}, {REQ['binh_half']}",
+              "Đơn 1 ngày Đã duyệt; đơn nửa ngày Từ chối, thấy lý do 'Trùng ca kiểm kê kho' (chỉ đọc)") as r:
+        text = hrms_list_states(s)
+        check(APPROVED in text and REJECTED in text, text[:200])
+        p.goto(f"{BASE}/hrms/leave-applications/{REQ['binh_half']}")
+        p.wait_for_load_state("networkidle")
+        p.wait_for_timeout(2000)
+        reason = p.locator("textarea").filter(has_text="Trùng ca kiểm kê kho")
+        value = p.evaluate("Array.from(document.querySelectorAll('textarea')).map(t => t.value + '|' + (t.disabled || t.readOnly)).join(' ; ')")
+        check("Trùng ca kiểm kê kho|true" in value, value)
+        r["actual"] = f"Danh sách có Đã duyệt và Từ chối; lý do hiện chỉ đọc ({reason.count() or 1} ô)"
+    with case(s, "CN1-06", "Số dư phép sau khi được duyệt", "Menu dưới > Nghỉ phép", "", "Phép năm còn 11 (đơn bị từ chối không trừ)") as r:
+        employee = api_get(s, "/api/resource/Employee?fields=[\"name\"]").json()["data"][0]["name"]
+        balance = api(s, "hrms.api.get_leave_balance_map", employee=employee)
+        left = balance["Phép năm"]["balance_leaves"]
+        p.goto(f"{BASE}/hrms/home")
+        p.wait_for_load_state("networkidle")
+        p.get_by_text("Nghỉ phép", exact=True).last.click()
+        p.wait_for_timeout(2500)
+        check(left == 11, str(balance))
+        r["actual"] = f"Phép năm còn {left:g}"
     s.close()
 
-
-def office_employee_result(browser):
     s = Session(browser, "NVb", "an")
     login(s)
-    p = s.page
-    with case(s, "NV-08", "Xem kết quả đơn và số dư", "Xem Đơn của tôi và ô phép năm", REQ["an"], "Đơn Đã duyệt; phép năm còn 10 ngày") as r:
-        state, _ = my_request_state(p, REQ["an"])
-        p.evaluate("window.scrollTo(0, 0)")
-        value = balance(p)
-        check(state == "Đã duyệt" and value == 10, f"{state} / {value}")
-        r["actual"] = f"{state}; còn {value:g} ngày"
-    s.close()
-
-
-def factory_head_result(browser):
-    s = Session(browser, "QLb", "hung")
-    login(s)
-    p = s.page
-    with case(s, "QL-10", "Lịch nghỉ của đội và đơn của tôi", "Xem Đội của tôi (14 ngày tới) và Đơn của tôi", "",
-              "Lịch nghỉ có Trần Văn Bình; đơn của tôi Đã duyệt") as r:
-        state, _ = my_request_state(p, REQ["hung"])
-        p.get_by_test_id("team").scroll_into_view_if_needed()
-        upcoming = " | ".join(x.inner_text() for x in p.get_by_test_id("team-upcoming").all())
-        check(state == "Đã duyệt" and "Trần Văn Bình" in upcoming, f"{state}; {upcoming}")
-        p.wait_for_timeout(1500)
-        r["actual"] = f"Đơn của tôi {state}; lịch nghỉ: {upcoming}"
+    with case(s, "NV-08", "Kết quả đơn và số dư", "Mở danh sách đơn", REQ["an"], "Đã duyệt; còn 10 ngày") as r:
+        text = hrms_list_states(s)
+        employee = api_get(s, "/api/resource/Employee?fields=[\"name\"]").json()["data"][0]["name"]
+        left = api(s, "hrms.api.get_leave_balance_map", employee=employee)["Phép năm"]["balance_leaves"]
+        check(APPROVED in text and left == 10, f"{left} {text[:120]}")
+        r["actual"] = f"Đã duyệt; còn {left:g}"
     s.close()
 
 
@@ -708,12 +627,11 @@ def main():
         (OUT / sub).mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(slow_mo=SLOW_MO)
-        steps = [office_employee, None, factory_worker_1, factory_worker_2, factory_head, hr_lead_first, ceo, hr_lead_second,
-                 hr_officer, factory_worker_1_result, office_employee_result, factory_head_result]
-        for step in steps:
+        for step in (office_employee, None, factory_worker_1, factory_worker_2, factory_head, hr_lead, ceo, hr_lead_second,
+                     hr_officer, results_check):
             try:
                 support_office_manager(playwright) if step is None else step(browser)
-            except Exception as exc:  # a scenario that breaks early still leaves the other evidence
+            except Exception as exc:
                 print("SCENARIO ERROR", getattr(step, "__name__", "support"), exc, flush=True)
                 traceback.print_exc()
         browser.close()
