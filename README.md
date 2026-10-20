@@ -16,3 +16,11 @@ Everything runs on the k3s node (ai1); no registry: the image is built there and
 
 Access over Tailscale: http://100.77.166.27:30080 (site tlc-hr.local, TLC home at /tlc).
 Passwords: kubectl -n tlc-hr get secret tlc-hr -o jsonpath={.data.admin-password} | base64 -d
+
+## UAT end to end
+
+    uat/run_uat.sh --reset     # Playwright in a container: 7 accounts, 11 recorded sessions, 47 test cases with real assertions
+
+Evidence (videos, screenshots, Excel UAT sheet) for the tailnet: http://100.77.166.27:30081 (deploy/k8s/evidence.yaml).
+Accounts: an (office), binh (factory 1, phone), f2w01 (factory 2, phone), hung (head of factory 1), hoa (HR lead), lan (HR officer),
+thanh (CEO), all @demo.example with the demo password of the Secret tlc-hr.
