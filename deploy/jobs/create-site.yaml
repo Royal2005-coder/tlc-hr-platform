@@ -20,11 +20,9 @@
       "name": "create-site",
       "image": "IMAGE",
       "imagePullPolicy": "Never",
-      "command": [
-       "bash",
-       "-c"
-      ],
       "args": [
+       "bash",
+       "-c",
        "set -e\nuntil python3 -c \"import socket; socket.create_connection((\\\"mariadb\\\", 3306), 2)\"; do sleep 3; done\nif [ -d sites/tlc-hr.local ]; then echo site exists; exit 0; fi\nbench new-site tlc-hr.local --mariadb-user-host-login-scope=% --admin-password=\"$ADMIN_PASSWORD\" --db-root-username=root --db-root-password=\"$DB_ROOT_PASSWORD\" --install-app erpnext --install-app hrms --install-app erpnextvn --install-app tlc_hr --set-default\nbench --site tlc-hr.local set-config default_language vi\nbench --site tlc-hr.local enable-scheduler\nbench --site tlc-hr.local list-apps"
       ],
       "resources": {

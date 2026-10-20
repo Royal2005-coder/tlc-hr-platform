@@ -20,11 +20,9 @@
       "name": "migrate",
       "image": "IMAGE",
       "imagePullPolicy": "Never",
-      "command": [
-       "bash",
-       "-c"
-      ],
       "args": [
+       "bash",
+       "-c",
        "set -e\nbench --site all migrate"
       ],
       "resources": {

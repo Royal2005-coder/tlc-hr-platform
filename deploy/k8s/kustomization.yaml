@@ -4,4 +4,4 @@ resources: [namespace.yaml, data.yaml, frappe.yaml]
 images:
   - name: tlc-hr
     newName: docker.io/library/tlc-hr
-    newTag: TO_BE_SET_BY_BUILD
+    newTag: 4e72906d-202610201533

@@ -20,11 +20,9 @@
       "name": "test",
       "image": "IMAGE",
       "imagePullPolicy": "Never",
-      "command": [
-       "bash",
-       "-c"
-      ],
       "args": [
+       "bash",
+       "-c",
        "set -e\nbench --site tlc-hr.local set-config allow_tests true\nbench --site tlc-hr.local run-tests --app tlc_hr"
       ],
       "resources": {

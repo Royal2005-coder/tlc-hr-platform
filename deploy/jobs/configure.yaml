@@ -1,4 +1,4 @@
-# scripts/job.sh configure  (IMAGE is replaced with the current tag)
+# scripts/job.sh configure  (IMAGE is replaced with the current tag; run after every new image)
 {
  "apiVersion": "batch/v1",
  "kind": "Job",
@@ -20,12 +20,10 @@
       "name": "configure",
       "image": "IMAGE",
       "imagePullPolicy": "Never",
-      "command": [
-       "bash",
-       "-c"
-      ],
       "args": [
-       "set -e\nls -1 apps > sites/apps.txt\nbench set-config -g db_host mariadb\nbench set-config -gp db_port 3306\nbench set-config -g redis_cache redis://redis-cache:6379\nbench set-config -g redis_queue redis://redis-queue:6379\nbench set-config -g redis_socketio redis://redis-queue:6379\nbench set-config -gp socketio_port 9000\ncat sites/apps.txt"
+       "bash",
+       "-c",
+       "set -e\nls -1 apps > sites/apps.txt\npython3 - <<EOF\nimport json, os\npath = \"sites/common_site_config.json\"\nconfig = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}\nconfig.update({\"db_host\": \"mariadb\", \"db_port\": 3306, \"redis_cache\": \"redis://redis-cache:6379\",\n               \"redis_queue\": \"redis://redis-queue:6379\", \"redis_socketio\": \"redis://redis-queue:6379\", \"socketio_port\": 9000})\njson.dump(config, open(path, \"w\"), indent=1)\nEOF\ncat sites/apps.txt sites/common_site_config.json"
       ],
       "resources": {
        "requests": {

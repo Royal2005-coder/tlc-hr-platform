@@ -20,11 +20,9 @@
       "name": "seed",
       "image": "IMAGE",
       "imagePullPolicy": "Never",
-      "command": [
-       "bash",
-       "-c"
-      ],
       "args": [
+       "bash",
+       "-c",
        "set -e\nbench --site tlc-hr.local execute tlc_hr.seed.run"
       ],
       "resources": {
