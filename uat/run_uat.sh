@@ -1,11 +1,12 @@
 #!/bin/sh
 # Run the end-to-end UAT of TLC HRM in the Playwright container against the site on this node, then refresh the evidence index.
-# Usage: ~/tlc-hr/uat/run_uat.sh [--reset]   --reset deletes every demo leave request first (expected numbers assume a clean demo)
+# Usage: ~/tlc-hr/uat/run_uat.sh [--reset]   --reset deletes every demo leave and overtime request first (expected numbers assume a clean demo)
 set -eu
 export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ "${1:-}" = "--reset" ]; then
   kubectl -n tlc-hr exec deploy/backend -- bench --site tlc-hr.local execute tlc_hr.seed.reset_leave_requests 2>/dev/null | tail -1
+  kubectl -n tlc-hr exec deploy/backend -- bench --site tlc-hr.local execute tlc_hr.seed.reset_overtime_requests 2>/dev/null | tail -1
 fi
 DEMO_PASSWORD=$(kubectl -n tlc-hr get secret tlc-hr -o jsonpath='{.data.demo-password}' | base64 -d)
 RUN_ID=$(date +%Y%m%d-%H%M)
