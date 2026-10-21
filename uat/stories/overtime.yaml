@@ -1,0 +1,53 @@
+module: overtime
+title: Tăng ca
+wave: I3
+summary: Trưởng nhà máy đề xuất tăng ca cho người của mình, người lao động đồng ý trên hệ thống, CEO duyệt; giới hạn theo BLLĐ 2019 điều 107; lương chỉ trả giờ đã duyệt.
+stories:
+  - id: ST-OT-01
+    role: factory_head
+    title: Trưởng nhà máy đề xuất tăng ca
+    story: Là trưởng nhà máy, tôi muốn đề xuất tăng ca cho từng công nhân của tôi và thấy ngay tổng giờ tháng/năm, để không vượt giới hạn luật.
+    ac:
+      - given: công nhân thuộc nhà máy tôi
+        when: tạo đề nghị 17:30–20:30 ngày thường, Lưu, Hành động > Đề nghị
+        then: đơn 3 giờ, loại ngày thường, Chờ người lao động đồng ý; dòng đầu form ghi Tháng x/40 · Năm y/200 giờ
+      - given: tôi mở đơn đã gửi
+        then: không có nút Đồng ý thay công nhân
+    brd: [HR-CP-18, HR-CP-21]
+    blueprint_uat: []
+    cases: [OT-01, OT-03]
+  - id: ST-OT-02
+    role: factory_head
+    title: Hệ thống chặn vượt giới hạn luật
+    story: Là công ty, tôi muốn hệ thống chặn đề nghị vượt 4 giờ/ngày thường, 12 giờ/ngày nghỉ, 40 giờ/tháng, 200 giờ/năm, để tuân thủ BLLĐ 2019 điều 107.
+    ac:
+      - given: người lao động đã có 3 giờ ngày đó
+        when: đề nghị thêm 2 giờ cùng ngày
+        then: bị chặn với thông báo quá 4 giờ tăng ca trong một ngày thường
+    brd: [HR-CP-18]
+    blueprint_uat: [UAT-WF-06]
+    cases: [OT-02]
+  - id: ST-OT-03
+    role: worker
+    title: Người lao động đồng ý tăng ca
+    story: Là công nhân, tôi muốn được hỏi và tự xác nhận đồng ý hay từ chối tăng ca, để quyền của tôi theo luật được tôn trọng.
+    ac:
+      - given: có đề nghị tăng ca cho tôi
+        then: tôi nhận thông báo (chuông và email)
+      - when: mở đơn, Hành động > Đồng ý
+        then: đơn Chờ giám đốc duyệt, ghi thời điểm tôi đồng ý; từ chối thì phải ghi lý do
+    brd: [HR-CP-19]
+    blueprint_uat: [UAT-WF-05]
+    cases: [OT-04]
+  - id: ST-OT-04
+    role: ceo
+    title: CEO duyệt tăng ca
+    story: Là CEO, tôi muốn duyệt tăng ca đã được người lao động đồng ý từ thẻ trên workspace, để chi phí tăng ca có kiểm soát.
+    ac:
+      - given: workspace TLC Điều hành
+        then: thẻ Tăng ca chờ giám đốc duyệt đếm đúng số đơn
+      - when: mở đơn, Hành động > Duyệt
+        then: đơn Đã duyệt; phiếu tăng ca (Overtime Slip) chỉ trả giờ đã duyệt
+    brd: [HR-CP-22, HR-CP-20]
+    blueprint_uat: [UAT-WF-06]
+    cases: [OT-05]

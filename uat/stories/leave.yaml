@@ -1,0 +1,157 @@
+module: leave
+title: Nghỉ phép
+wave: I0
+summary: Nhân viên xin nghỉ trên app Frappe HR; quản lý trực tiếp duyệt rồi HR duyệt; từ chối phải có lý do; không ai tự duyệt đơn của mình.
+stories:
+  - id: ST-GOV-01
+    role: all
+    title: Mỗi người vào đúng giao diện của vai trò
+    story: Là người dùng TLC, tôi muốn đăng nhập là vào đúng màn hình công việc của mình, để không phải tìm chức năng.
+    ac:
+      - given: tài khoản là công nhân hoặc nhân viên văn phòng
+        when: đăng nhập
+        then: vào app Frappe HR (/hrms), không thấy dữ liệu người khác
+      - given: tài khoản là quản lý, HR hoặc CEO
+        when: đăng nhập
+        then: vào workspace của vai trò (TLC Quản lý / TLC Nhân sự / TLC Điều hành) với đúng quyền duyệt và phạm vi xem
+    brd: [HR-CHG-05, HR-CHG-14, HR-NFR-12]
+    blueprint_uat: [UAT-GOV-03]
+    cases: [NV-01, CN1-01, CN2-01, QL-01, HR-01, HR-09, CEO-01]
+  - id: ST-LV-01
+    role: office
+    title: Xin nghỉ trên app và biết ngay ai duyệt
+    story: Là nhân viên văn phòng, tôi muốn xem số dư phép và gửi đơn nghỉ trên app, để không phải hỏi HR hay gửi giấy.
+    ac:
+      - given: còn 12 ngày phép năm
+        when: mở trang Nghỉ phép
+        then: thấy số dư 12 / 12 ngày
+      - given: chọn 2 ngày làm việc tới
+        when: Lưu rồi Hành động > Gửi duyệt
+        then: đơn ở trạng thái Chờ quản lý duyệt, người duyệt là trưởng phòng trực tiếp (hệ thống tự điền, người gửi không chọn)
+    brd: [HR-CP-10, HR-CP-11, HR-CHG-16, HR-CHG-09]
+    blueprint_uat: [UAT-WF-03]
+    cases: [NV-02, NV-03, NV-04, NV-06]
+  - id: ST-LV-02
+    role: office
+    title: Không gửi được đơn trùng ngày
+    story: Là nhân viên, tôi muốn hệ thống chặn đơn trùng với đơn đang có, để không bị trừ phép hai lần.
+    ac:
+      - given: đã có đơn chờ duyệt cho các ngày đó
+        when: tạo đơn mới cùng ngày
+        then: không lưu được, có thông báo trùng
+    brd: [HR-CP-07, HR-CP-16]
+    blueprint_uat: []
+    cases: [NV-05]
+  - id: ST-LV-03
+    role: all
+    title: Chỉ thấy dữ liệu trong phạm vi của mình
+    story: Là người lao động, tôi muốn hồ sơ và đơn của tôi chỉ người có trách nhiệm xem được, để thông tin cá nhân được bảo vệ.
+    ac:
+      - given: nhân viên văn phòng
+        when: liệt kê hồ sơ và đơn qua API
+        then: chỉ có hồ sơ và đơn của chính mình
+      - given: công nhân hoặc quản lý Nhà máy 2
+        when: mở đơn của Nhà máy 1
+        then: bị chặn (403)
+    brd: [HR-CHG-05, HR-NFR-01]
+    blueprint_uat: [UAT-GOV-03]
+    cases: [NV-07, CN2-03, QL-06]
+  - id: ST-LV-04
+    role: worker
+    title: Công nhân xin nghỉ cả ngày hoặc nửa ngày
+    story: Là công nhân nhà máy, tôi muốn xin nghỉ cả ngày hoặc nửa ngày ngay trên app, để quản lý nhà máy của tôi duyệt kịp ca.
+    ac:
+      - given: công nhân Nhà máy 1
+        when: gửi đơn 1 ngày và đơn nửa ngày
+        then: hai đơn Chờ quản lý duyệt, người duyệt là trưởng Nhà máy 1; đơn nửa ngày tính 0,5 ngày
+      - given: công nhân Nhà máy 2
+        when: gửi đơn
+        then: đơn đến trưởng Nhà máy 2
+    brd: [HR-CP-10, HR-CP-14, HR-CHG-16]
+    blueprint_uat: []
+    cases: [CN1-02, CN1-03, CN2-02]
+  - id: ST-LV-05
+    role: all
+    title: Không ai tự duyệt đơn của mình
+    story: Là công ty, tôi muốn không ai duyệt hay từ chối đơn về chính họ, kể cả HR và quản lý, để quy trình minh bạch.
+    ac:
+      - given: người gửi mở đơn của chính mình
+        when: xem Hành động
+        then: không có Duyệt / Từ chối
+    brd: [HR-CHG-16, HR-CHG-17]
+    blueprint_uat: [UAT-ORG-03]
+    cases: [CN1-04, HR-07]
+  - id: ST-LV-06
+    role: factory_head
+    title: Quản lý duyệt có thông tin hỗ trợ quyết định
+    story: Là trưởng nhà máy, tôi muốn thấy số dư sau khi duyệt và ai trong đội nghỉ trùng ngay trên đơn, để duyệt nhanh mà không thiếu người.
+    ac:
+      - given: đơn 1 ngày của công nhân đang chờ tôi
+        when: mở đơn
+        then: dòng đầu form ghi số dư sau khi duyệt (11 / 12 ngày) và danh sách người cùng nhà máy nghỉ trùng
+      - given: tôi bấm Hành động > Duyệt
+        then: đơn chuyển Chờ nhân sự duyệt
+      - given: workspace TLC Quản lý
+        then: thẻ Đơn chờ tôi duyệt và lịch nghỉ của đội chỉ gồm người của nhà máy tôi
+    brd: [HR-CP-13, HR-CP-14, HR-CHG-17]
+    blueprint_uat: []
+    cases: [QL-02, QL-03, QL-04, QL-07, HT-01]
+  - id: ST-LV-07
+    role: factory_head
+    title: Từ chối phải có lý do và người lao động thấy lý do
+    story: Là quản lý, khi từ chối tôi muốn ghi lý do, để người lao động hiểu và sắp xếp lại.
+    ac:
+      - given: quản lý bấm Hành động > Từ chối
+        then: hộp thoại bắt buộc nhập lý do; đơn Từ chối, lý do được lưu và ghi bước bị từ chối
+      - given: người lao động mở đơn bị từ chối
+        then: thấy lý do (chỉ đọc)
+    brd: [HR-CHG-17]
+    blueprint_uat: []
+    cases: [QL-05, CN1-05]
+  - id: ST-LV-08
+    role: hr
+    title: HR duyệt cấp cuối và theo dõi số dư phép
+    story: Là HR hội sở, tôi muốn duyệt cấp cuối các đơn đã qua quản lý và xem số dư phép toàn công ty, để kiểm soát quỹ phép.
+    ac:
+      - given: workspace TLC Nhân sự
+        then: thẻ 60 nhân sự (hội sở 31, nhà máy 29) và số đơn chờ nhân sự duyệt
+      - given: đơn Chờ nhân sự duyệt
+        when: HR Lead hoặc chuyên viên nhân sự bấm Duyệt
+        then: đơn Đã duyệt, sổ phép trừ số ngày
+      - given: báo cáo Số dư phép
+        then: mở sẵn kỳ cả năm
+    brd: [HR-CP-11, HR-CP-28, HR-CHG-17]
+    blueprint_uat: []
+    cases: [HR-02, HR-03, HR-04, HR-08, HR-10]
+  - id: ST-LV-09
+    role: ceo
+    title: Đơn của quản lý và trưởng nhân sự đi lên CEO
+    story: Là CEO, tôi muốn duyệt đơn của cấp dưới trực tiếp (trưởng nhà máy, trưởng nhân sự), để tuyến duyệt đi theo sơ đồ báo cáo.
+    ac:
+      - given: trưởng Nhà máy 1 và trưởng nhân sự gửi đơn trong app
+        then: người duyệt cấp 1 là CEO
+      - given: CEO duyệt
+        then: đơn sang Chờ nhân sự duyệt; HR khác (không phải người gửi) duyệt cấp cuối
+    brd: [HR-CHG-16, HR-CP-14]
+    blueprint_uat: [UAT-ORG-03]
+    cases: [QL-08, HR-06, CEO-03]
+  - id: ST-LV-10
+    role: ceo
+    title: CEO nhìn bức tranh nhân sự
+    story: Là CEO, tôi muốn một màn hình có số nhân sự, đơn đang chờ và biểu đồ, để nắm tình hình mà không cần hỏi.
+    ac:
+      - given: workspace TLC Điều hành
+        then: thẻ nhân sự, đơn chờ tôi, đơn chờ quản lý toàn công ty; biểu đồ nhân sự theo phòng ban và ngày nghỉ theo tháng
+    brd: [HR-CP-27, HR-BC-02]
+    blueprint_uat: []
+    cases: [CEO-02, CEO-04]
+  - id: ST-LV-11
+    role: worker
+    title: Người lao động thấy kết quả và số dư sau duyệt
+    story: Là người lao động, tôi muốn biết đơn đã duyệt hay bị từ chối và còn bao nhiêu phép, để chủ động kế hoạch.
+    ac:
+      - given: một đơn duyệt, một đơn bị từ chối
+        then: danh sách hiện đúng trạng thái; số dư chỉ trừ đơn đã duyệt (11 ngày; nhân viên văn phòng 10 ngày)
+    brd: [HR-CP-11, HR-CHG-06]
+    blueprint_uat: []
+    cases: [CN1-06, NV-08]

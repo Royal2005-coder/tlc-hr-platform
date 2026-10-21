@@ -1,0 +1,85 @@
+# Five TLC roles (plus support accounts): who they are, what hurts today, where they work in Frappe, their journeys (story ids).
+roles:
+  - key: worker
+    title: Công nhân nhà máy
+    accounts: [binh (Nhà máy 1), f2w01 (Nhà máy 2)]
+    people: 29 người ở 3 nhà máy, làm ca hành chính, ca đêm 22–06, ca cao điểm 07–19
+    interface: App Frappe HR (/hrms) trên trình duyệt; chấm công GPS tại cổng nhà máy
+    goals: [Chấm công đúng ca, Xin nghỉ nhanh, Biết còn bao nhiêu phép và giờ tăng ca, Được hỏi trước khi tăng ca, Xem phiếu lương]
+    pain_points:
+      - Phải gặp tổ trưởng/HR để hỏi số ngày phép còn lại và giờ tăng ca
+      - Tăng ca bị xếp mà không được hỏi ý kiến (trái BLLĐ 2019)
+      - Quên chấm công thì không biết giải trình ở đâu
+      - Không biết đơn đã được duyệt chưa
+    improvements:
+      - Trang chủ app hiện số dư phép, nút xin nghỉ, phiếu lương
+      - Đề nghị tăng ca gửi thông báo; người lao động tự Đồng ý / Từ chối có lý do
+      - Giải trình công trên app, đi thẳng tới trưởng nhà máy
+      - Trạng thái và lý do từ chối hiện ngay trên đơn
+    journeys: [ST-GOV-01, ST-LV-04, ST-LV-05, ST-LV-11, ST-OT-03]
+  - key: office
+    title: Nhân viên văn phòng hội sở SG
+    accounts: [an (Kinh doanh)]
+    people: 31 người ở hội sở (kinh doanh, kế toán, CNTT, CSKH, nhân sự, điều hành)
+    interface: App Frappe HR (/hrms); desk cho công tác, chi phí, đặt phòng họp
+    goals: [Xin nghỉ không cần giấy, Công tác – tạm ứng – quyết toán một luồng, Biết ai duyệt và đến đâu rồi]
+    pain_points:
+      - Đơn giấy / Bitrix24 rời rạc, không biết ai đang giữ đơn
+      - Tạm ứng và quyết toán công tác tách rời, dễ quên hoàn ứng
+      - Gửi trùng ngày nghỉ, bị trừ phép sai
+    improvements:
+      - Người duyệt tự điền theo tuyến báo cáo; theo dõi trạng thái trong Đơn của tôi
+      - Chặn đơn trùng; số dư cập nhật ngay khi duyệt
+    journeys: [ST-GOV-01, ST-LV-01, ST-LV-02, ST-LV-03, ST-LV-11]
+  - key: factory_head
+    title: Head manager nhà máy (3 nhà máy)
+    accounts: [hung (Nhà máy 1, 15 người), nm2 (Nhà máy 2, 7 người), nm3 (Nhà máy 3, 7 người)]
+    people: 3 trưởng nhà máy, mỗi người chỉ quản lý nhà máy của mình
+    interface: Desk – workspace TLC Quản lý (thẻ đơn chờ tôi, chấm công hôm nay, đi muộn, tăng ca), lịch nghỉ của đội
+    goals: [Duyệt nhanh mà không thiếu người trong ca, Đề xuất tăng ca đúng luật, Thấy ngoại lệ chấm công của đội]
+    pain_points:
+      - Duyệt rải rác qua tin nhắn, không biết ai cũng nghỉ hôm đó
+      - Không biết công nhân đã tăng ca bao nhiêu giờ trong tháng/năm
+      - Dữ liệu nhà máy khác lẫn vào
+    improvements:
+      - Dòng đầu form ghi số dư sau duyệt và người nghỉ trùng
+      - Đề nghị tăng ca hiện tổng giờ tháng/năm, chặn vượt luật
+      - Phạm vi theo cây báo cáo – chỉ thấy người của nhà máy mình (403 với nhà máy khác)
+    journeys: [ST-GOV-01, ST-LV-03, ST-LV-06, ST-LV-07, ST-OT-01, ST-OT-02]
+  - key: hr
+    title: HR văn phòng SG
+    accounts: [hoa (Giám đốc nhân sự – HR Lead), lan (Chuyên viên nhân sự)]
+    people: Phòng Nhân sự và Hành chính, 6 người
+    interface: Desk – workspace TLC Nhân sự (thẻ, biểu đồ, danh sách chờ, báo cáo số dư phép, tham số lương VN)
+    goals: [Duyệt cấp cuối, Chốt công và tính lương đúng luật, Nắm toàn bộ vòng đời nhân sự]
+    pain_points:
+      - Nhiều việc nhất (~50 hoạt động), thông tin nằm ở Excel và Bitrix24
+      - Kiểm tra số dư phép và giờ tăng ca bằng tay
+      - Tham số lương thay đổi theo luật (lương cơ sở 01/07/2026, thuế 5 bậc)
+    improvements:
+      - Danh sách chờ duyệt và thẻ số liệu một màn hình
+      - Báo cáo số dư phép mở sẵn cả năm; tham số lương VN 2026 có ngày hiệu lực
+      - HR không tự duyệt đơn của mình; HR khác duyệt thay
+    journeys: [ST-GOV-01, ST-LV-05, ST-LV-08, ST-LV-09]
+  - key: ceo
+    title: CEO văn phòng SG
+    accounts: [thanh (Tổng giám đốc)]
+    people: Ban điều hành
+    interface: Desk – workspace TLC Điều hành (thẻ, biểu đồ, hộp duyệt tăng ca)
+    goals: [Bức tranh nhân sự tức thì, Duyệt tại chỗ, Kiểm soát chi phí tăng ca]
+    pain_points:
+      - Phải hỏi HR để biết số người, số đơn đang chờ
+      - Duyệt tăng ca không biết người lao động đã đồng ý chưa
+    improvements:
+      - Workspace có thẻ và biểu đồ toàn công ty
+      - Chỉ nhận đề nghị tăng ca sau khi người lao động đồng ý
+    journeys: [ST-GOV-01, ST-LV-09, ST-LV-10, ST-OT-04]
+  - key: support
+    title: Vai trò hỗ trợ (có video)
+    accounts: [quang (Trưởng phòng Kinh doanh), ketoan (Kế toán – từ đợt Lương)]
+    people: Trưởng phòng hội sở duyệt cấp 1; kế toán xác nhận chi lương, tạm ứng
+    interface: Desk
+    goals: [Duyệt cấp 1 cho phòng mình, Xác nhận đã chi (không phải duyệt)]
+    pain_points: [Không biết đơn nào đến lượt mình]
+    improvements: [Workspace TLC Quản lý với thẻ Đơn chờ tôi duyệt]
+    journeys: [ST-LV-06]
