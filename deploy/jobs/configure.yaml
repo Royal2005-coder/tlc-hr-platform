@@ -23,7 +23,7 @@
       "args": [
        "bash",
        "-c",
-       "set -e\nls -1 apps > sites/apps.txt\npython3 - <<EOF\nimport json, os\npath = \"sites/common_site_config.json\"\nconfig = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}\nconfig.update({\"db_host\": \"mariadb\", \"db_port\": 3306, \"redis_cache\": \"redis://redis-cache:6379\",\n               \"redis_queue\": \"redis://redis-queue:6379\", \"redis_socketio\": \"redis://redis-queue:6379\", \"socketio_port\": 9000,\n               \"tlc_demo_smtp\": {\"server\": \"mailpit\", \"port\": 1025}})\njson.dump(config, open(path, \"w\"), indent=1)\nEOF\ncat sites/apps.txt sites/common_site_config.json"
+       "set -e\nls -1 apps > sites/apps.txt\npython3 - <<EOF\nimport json, os\npath = \"sites/common_site_config.json\"\nconfig = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}\nconfig.update({\"db_host\": \"mariadb\", \"db_port\": 3306, \"redis_cache\": \"redis://redis-cache:6379\",\n               \"redis_queue\": \"redis://redis-queue:6379\", \"redis_socketio\": \"redis://redis-queue:6379\", \"socketio_port\": 9000,\n               \"tlc_demo_smtp\": {\"server\": \"mailpit\", \"port\": 1025},\n               \"host_name\": \"https://ai1-optiplex-tower-plus-7020.tail439afc.ts.net\"})\njson.dump(config, open(path, \"w\"), indent=1)\nEOF\ncat sites/apps.txt sites/common_site_config.json"
       ],
       "resources": {
        "requests": {

@@ -1,0 +1,93 @@
+module: organization
+title: Cơ cấu tổ chức và định biên nhân sự
+wave: W4
+summary: Quản lý cây tổ chức hành chính nhiều cấp, tách bạch tuyến báo cáo phê duyệt / đồng cấp / kiêm nhiệm, chức danh và vị trí gắn JD, địa điểm làm việc gắn lịch làm việc, định biên theo vị trí, xem/xuất sơ đồ tổ chức báo cáo, quyết định thay đổi cơ cấu có hiệu lực và cảnh báo dữ liệu phòng ban không khớp.
+stories:
+  - id: ST-ORG-01
+    role: hr_lead
+    title: Quản lý cây tổ chức nhiều cấp
+    story: Là HR Lead, tôi muốn quản lý cây tổ chức phân cấp nhiều tầng (công ty, khối, phòng ban, nhóm) với mã định danh và tên đơn vị chuẩn hóa.
+    ac:
+      - given: danh mục Department chuẩn của Frappe/ERPNext
+        when: mở xem dạng cây (Tree View) hoặc tạo mới đơn vị
+        then: mỗi đơn vị có mã tlc_organization_code duy nhất, cấp tổ chức (Company/Division/Department/Team), tên và đơn vị cha.
+    brd: [HR-ORG-01]
+    blueprint_uat: [UAT-HR-ORG-01]
+    cases: [ORG-01]
+  - id: ST-ORG-02
+    role: hr_lead
+    title: Tách sơ đồ hành chính với tuyến phê duyệt và đồng cấp
+    story: Là HR Lead, tôi muốn thiết lập tuyến báo cáo/phê duyệt riêng với hai co-leader cùng quyền duyệt và cho phép nhân viên kiêm nhiệm ở hai phòng ban.
+    ac:
+      - given: nhân viên có phân công tại phòng ban
+        when: cấu hình TLC Organization Reporting Line với hai người quản lý cùng phạm vi phòng ban
+        then: cả hai co-leader đều có quyền duyệt tương đương; phân công TLC Organization Assignment cho phép một nhân viên có phân công chính và phân công kiêm nhiệm.
+    brd: [HR-ORG-02]
+    blueprint_uat: [UAT-HR-ORG-02]
+    cases: [ORG-02, ORG-08]
+  - id: ST-ORG-03
+    role: hr_lead
+    title: Danh mục chức danh và vị trí
+    story: Là HR Lead, tôi muốn quản lý vị trí thuộc đơn vị cụ thể, gắn chức danh, cấp bậc và bản mô tả công việc (JD).
+    ac:
+      - given: danh mục Designation và Employee Grade
+        when: tạo TLC Organization Position
+        then: bắt buộc có mã vị trí, chức danh, cấp bậc, phòng ban trực thuộc và nội dung bản mô tả công việc (JD).
+    brd: [HR-ORG-03]
+    blueprint_uat: [UAT-HR-ORG-03]
+    cases: [ORG-03]
+  - id: ST-ORG-04
+    role: hr_lead
+    title: Địa điểm làm việc gắn lịch làm việc và quy tắc chấm công
+    story: Là HR Lead, tôi muốn quản lý các địa điểm làm việc với thông tin lịch nghỉ lễ và ca làm việc mặc định.
+    ac:
+      - given: danh mục Shift Location
+        when: xem hoặc cập nhật thông tin địa điểm
+        then: trường tlc_organization_holiday_list và tlc_organization_shift_type lưu tham chiếu lịch làm việc; phân ca thực tế cho nhân viên vẫn qua Shift Assignment native.
+    brd: [HR-ORG-04]
+    blueprint_uat: [UAT-HR-ORG-04]
+    cases: [ORG-04]
+  - id: ST-ORG-05
+    role: hr_lead
+    title: Quản lý định biên theo vị trí
+    story: Là HR Lead, tôi muốn theo dõi định biên theo vị trí và tự động tính số lượng đã dùng, còn trống hoặc vượt định biên.
+    ac:
+      - given: vị trí đã có phân công nhân viên đang làm việc
+        when: tạo hoặc tính lại TLC Organization Headcount
+        then: hệ thống tự tính số lượng đã dùng (used), còn trống (vacant) hoặc vượt (excess) dựa trên số nhân viên active tại thời điểm chỉ định.
+    brd: [HR-ORG-05]
+    blueprint_uat: [UAT-HR-ORG-05]
+    cases: [ORG-05]
+  - id: ST-ORG-06
+    role: hr_lead
+    title: Vẽ và xuất sơ đồ tổ chức
+    story: Là HR Lead, tôi muốn xem sơ đồ tổ chức trực quan trên giao diện Desk và có thể xuất hình ảnh.
+    ac:
+      - given: dữ liệu Employee reports_to native
+        when: truy cập trang Sơ đồ tổ chức (Organizational Chart) và bấm nút Xuất (Export)
+        then: sơ đồ phân cấp nhân sự hiển thị trực quan và hệ thống xuất file hình ảnh định dạng PNG về máy.
+    brd: [HR-ORG-06]
+    blueprint_uat: [UAT-HR-ORG-06]
+    cases: [ORG-06]
+  - id: ST-ORG-07
+    role: hr_lead
+    title: Lịch sử thay đổi cơ cấu có ngày hiệu lực
+    story: Là HR Lead, tôi muốn lập quyết định thay đổi cơ cấu (tách, gộp, đổi tên, chuyển cha) có ngày hiệu lực và lưu vết lịch sử.
+    ac:
+      - given: nhu cầu điều chỉnh đơn vị phòng ban
+        when: tạo TLC Organization Change và gửi duyệt (submit)
+        then: tài liệu lưu loại thay đổi, ngày hiệu lực, lý do, đính kèm và danh sách chi tiết các đơn vị; hệ thống tự động hoặc định kỳ áp dụng khi đến hạn hiệu lực.
+    brd: [HR-ORG-07]
+    blueprint_uat: [UAT-HR-ORG-07]
+    cases: [ORG-07]
+  - id: ST-ORG-08
+    role: hr_lead
+    title: Cảnh báo dữ liệu tổ chức không khớp
+    story: Là HR Lead, tôi muốn hệ thống cảnh báo khi ghi nhận chấm công hoặc công tác tại phòng ban khác với phòng ban nhân viên trực thuộc hoặc kiêm nhiệm.
+    ac:
+      - given: nhân viên có phòng ban chính và các phân công kiêm nhiệm hợp lệ
+        when: lưu chấm công hoặc đơn có phòng ban ghi nhận ngoài phạm vi cho phép
+        then: hệ thống hiển thị thông báo cảnh báo (warning message) để HR kiểm tra đối chiếu.
+    brd: [HR-ORG-08]
+    blueprint_uat: [UAT-HR-ORG-08]
+    cases: [ORG-08]

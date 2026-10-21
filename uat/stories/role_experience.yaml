@@ -1,0 +1,79 @@
+module: role_experience
+title: Trải nghiệm native theo vai trò và phạm vi
+wave: W8
+summary: Nhân viên mặc định dùng HRMS; tăng ca và việc được giao là màn hình Desk gốc bổ sung. Trưởng ba nhà máy dùng cùng workspace nhưng server giới hạn dữ liệu; HR theo dõi hạn ToDo; CEO xem gross/net và hàng đợi ký. Chỉ kiểm tra điều hướng và phạm vi, không coi đây là nghiệm thu toàn bộ báo cáo hay quy trình nghiệp vụ.
+stories:
+- id: ST-RX-01
+  role: worker
+  roles: [worker, office]
+  title: Nhân viên có điểm vào công việc cá nhân trên giao diện gốc
+  story: Là nhân viên nhà máy hoặc hội sở, tôi muốn vào HRMS mặc định và mở phép, lương, tăng ca và việc được giao từ các màn hình gốc.
+  brd: [HR-CHG-09, HR-NFR-12]
+  blueprint_uat: []
+  cases: [RX-01, RX-02, RX-03, RX-04]
+  ac:
+  - given: bốn nhân viên demo thuộc ba nhà máy và hội sở
+    when: đăng nhập bằng desktop và bấm shortcut Cá nhân
+    then: vào HRMS mặc định; phép và lương mở HRMS; tăng ca và ToDo mở Desk gốc; không có portal riêng
+    cases: [RX-01, RX-02, RX-03, RX-04]
+- id: ST-RX-02
+  role: factory_head
+  title: Mỗi trưởng nhà máy chỉ thấy phạm vi nhà máy mình
+  story: Là trưởng nhà máy, tôi muốn một workspace có ngoại lệ công, duyệt, chốt công và danh sách nhân sự mà không lẫn dữ liệu của nhà máy khác.
+  brd: [HR-CHG-05, HR-CHG-17, HR-CP-24]
+  blueprint_uat: []
+  cases: [RX-11, RX-12, RX-13]
+  ac:
+  - given: ba trưởng nhà máy và định danh nhân viên của mỗi nhà máy
+    when: xem thẻ nhân sự, mở danh sách và hàng đợi rồi thử mở hồ sơ nhà máy khác
+    then: thẻ khớp Employee có quyền, có nhân viên của mình, không có nhân viên nhà máy khác; màn hình hồ sơ khác bị từ chối
+    cases: [RX-11, RX-12, RX-13]
+- id: ST-RX-03
+  role: hr
+  title: HR theo dõi việc đến hạn và hồ sơ vòng đời
+  story: Là HR Lead hoặc HR Officer, tôi muốn thấy việc mở đến hạn và quá hạn, rồi mở hồ sơ hội nhập, nghỉ việc và tuyển dụng trên Desk.
+  brd: [HR-CHG-06, HR-BC-01]
+  blueprint_uat: []
+  cases: [RX-21, RX-22]
+  ac:
+  - given: HR Lead và HR Officer đăng nhập
+    when: mở TLC HR Hạn xử lý và các shortcut công việc
+    then: thẻ ToDo có số liệu; HR Lead mở ToDo, hội nhập, nghỉ việc; HR Officer mở ToDo và tuyển dụng
+    cases: [RX-21, RX-22]
+- id: ST-RX-04
+  role: ceo
+  title: CEO xem gross/net và hàng đợi ký bằng Desk
+  story: Là CEO, tôi muốn xem số lương gross/net đã phát hành tháng này và mở các hồ sơ cần ký mà không nhầm phê duyệt thành đã thanh toán.
+  brd: [HR-BC-02, HR-LG-07]
+  blueprint_uat: []
+  cases: [RX-23]
+  ac:
+  - given: CEO đăng nhập
+    when: mở TLC CEO Chi phí và các shortcut lương, bảng lương và tăng ca
+    then: thẻ có dữ liệu số và shortcut mở đúng DocType; hành trình không ghi nhận thanh toán hoặc tự duyệt
+    cases: [RX-23]
+- id: ST-RX-05
+  role: hr
+  roles: [hr, support]
+  title: Payroll và kế toán có màn hình tác nghiệp riêng
+  story: Là chuyên viên lương hoặc kế toán, tôi muốn đi vào đúng danh sách bảng lương, tạm ứng và quyết toán theo quyền của mình.
+  brd: [HR-LG-07, HR-TU-07]
+  blueprint_uat: []
+  cases: [RX-24, RX-25]
+  ac:
+  - given: chuyên viên lương và kế toán đăng nhập
+    when: mở workspace tác nghiệp lương và kế toán chi trả
+    then: chuyên viên lương mở Payroll Entry; kế toán mở Employee Advance và Expense Claim; không có thao tác xác nhận chi giả lập
+    cases: [RX-24, RX-25]
+- id: ST-RX-06
+  role: support
+  title: Quản lý hội sở giữ hàng đợi native hiện có
+  story: Là trưởng phòng hội sở, tôi muốn mở đơn chờ mình duyệt trong workspace Quản lý mà không bị chuyển vào báo cáo nhà máy.
+  brd: [HR-CHG-17]
+  blueprint_uat: []
+  cases: [RX-26]
+  ac:
+  - given: quản lý hội sở đăng nhập
+    when: đọc thẻ Đơn chờ tôi duyệt và bấm Đơn chờ duyệt
+    then: mở Leave Application native theo quyền; không khẳng định một quyết định duyệt đã xảy ra
+    cases: [RX-26]

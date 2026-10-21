@@ -1,0 +1,47 @@
+module: assistant
+title: Trợ lý HR AI (Raven + Mistral)
+wave: W7
+summary: Trợ lý HR tích hợp native chat Raven với mô hình Mistral chỉ chạy trên dữ liệu demo hư cấu; công cụ AI gọi cùng application service của app TLC; chỉ hỗ trợ đọc dữ liệu cá nhân (hồ sơ, công, phép, phiếu lương của chính mình) và tạo nháp đơn nghỉ phép; tuyệt đối không có công cụ duyệt, tính lương, đóng kỳ hay đổi quyền; từ chối truy cập chéo người/nhà máy; quản lý secret an toàn trong pod.
+stories:
+  - id: ST-AI-01
+    role: worker
+    title: Trợ lý HR trả lời dữ liệu cá nhân và tạo nháp đơn nghỉ phép
+    story: Là người lao động, tôi muốn trò chuyện với trợ lý HR trên Raven để xem ngày công, số dư phép, phiếu lương của mình và tạo nháp đơn nghỉ phép khi cần, để tiết kiệm thời gian mà không cần nhờ HR nhập hộ.
+    ac:
+      - given: người lao động đăng nhập và mở chat riêng với Trợ lý HR trên Raven
+        when: hỏi về thông tin hồ sơ, ngày công hoặc phiếu lương của chính mình
+        then: trợ lý trả lời đúng phạm vi cá nhân, viện dẫn mã nhân viên và bản ghi, không suy diễn
+      - given: người lao động yêu cầu tạo đơn nghỉ phép có đủ loại phép, ngày và lý do
+        when: trợ lý thực hiện lệnh tạo nháp
+        then: đơn nghỉ phép được tạo ở trạng thái Nháp (docstatus=0), cung cấp đường dẫn cho nhân viên tự kiểm tra và tự gửi duyệt; không tự ý gửi duyệt hay phê duyệt
+    brd: [HR-BC-04, HR-BC-07]
+    blueprint_uat: []
+    cases: [AI-01, AI-02]
+  - id: ST-AI-02
+    role: all
+    title: Chặn truy vấn vượt quyền, chéo người, chéo nhà máy và thao tác phê duyệt
+    story: Là cán bộ quản lý và bảo mật, tôi muốn trợ lý AI từ chối mọi yêu cầu đọc lương người khác, hỏi dữ liệu nhà máy khác hoặc can thiệp duyệt/tính lương, để quyền hạn và bảo mật dữ liệu được giữ nguyên.
+    ac:
+      - given: người dùng hoặc công nhân yêu cầu xem lương hay hồ sơ của nhân viên nhà máy khác
+        when: gửi yêu cầu cho trợ lý
+        then: trợ lý và backend từ chối truy cập (AI_SCOPE_DENIED), không lộ dữ liệu nhạy cảm
+      - given: người dùng yêu cầu duyệt đơn, ký bảng lương, đóng kỳ công hoặc đổi quyền
+        when: gửi yêu cầu cho trợ lý
+        then: trợ lý từ chối vì không có công cụ phê duyệt; API ném lỗi và ghi nhận nhật ký vi phạm
+    brd: [HR-BC-07, HR-LG-25, HR-NFR-01]
+    blueprint_uat: [UAT-AI-01, UAT-AI-02, UAT-PAY-04]
+    cases: [AI-03, AI-04, AI-05]
+  - id: ST-AI-03
+    role: support
+    title: Cấu hình an toàn và kiểm tra kết nối nhà cung cấp trên dữ liệu mẫu
+    story: Là quản trị viên, tôi muốn cấu hình trợ lý AI dùng Secret nội bộ trong pod, kiểm tra đúng whitelist công cụ và chạy lệnh smoke có kiểm chứng thực tế, để hệ thống không dùng dữ liệu thật trái phép và không rò rỉ khóa API.
+    ac:
+      - given: pod cấu hình với Secret tlc-hr-ai/mistral-api-key và cờ dữ liệu demo synthetic-only
+        when: chạy lệnh cấu hình assistant
+        then: Raven được thiết lập với Local LLM OpenAI-compatible, đúng 2 công cụ tlc_hr_query và tlc_hr_draft_leave, mở kênh DM cho các tài khoản demo
+      - given: chạy lệnh provider_smoke trên dữ liệu demo
+        when: kết nối tới Mistral
+        then: gọi thành công và thực thi đúng công cụ Raven đã đăng ký, không in khóa API hay dữ liệu lương
+    brd: [HR-BC-07, HR-NFR-01, HR-NFR-02]
+    blueprint_uat: []
+    cases: [AI-06]

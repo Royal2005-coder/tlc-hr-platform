@@ -35,6 +35,8 @@ ACCOUNTS = {
     "nm2": {"name": "Lương Quốc Hải", "role": "Quản lý Nhà máy 2 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
     "nm3": {"name": "Đinh Công Sơn", "role": "Quản lý Nhà máy 3 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
     "f3w01": {"name": None, "role": "Công nhân Nhà máy 3 (ca cao điểm)", "workforce": "Nhà máy", "approver": "Đinh Công Sơn"},
+    "phuong": {"name": None, "role": "HR hội sở - Chuyên viên tính lương (TLC Payroll)", "workforce": "Hội sở", "approver": "Lê Thị Hòa"},
+    "chi": {"name": None, "role": "Hỗ trợ - Kế toán (xác nhận chi)", "workforce": "Hội sở", "approver": None},
     "quang": {"name": "Trần Minh Quang", "role": "Hỗ trợ - Trưởng phòng Kinh doanh hội sở", "workforce": "Hội sở", "approver": "Nguyễn Văn Thành"},
     "thanh": {"name": "Nguyễn Văn Thành", "role": "CEO hội sở - Tổng giám đốc", "workforce": "Hội sở", "approver": None},
 }
@@ -132,7 +134,8 @@ def case(s, case_id, function, steps, data, expected):
         yield found
         row["actual"], row["status"] = found.get("actual", "Đúng như mong đợi"), "Đạt"
     except Exception as exc:
-        row["actual"] = f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+        message = str(exc).splitlines()
+        row["actual"] = f"{type(exc).__name__}: {message[0][:300] if message else '(không có thông báo)'}"
         row["status"] = "Không đạt"
         row["trace"] = traceback.format_exc()[-1500:]
     s.page.wait_for_timeout(700)
@@ -165,9 +168,29 @@ def login(s):
     p.wait_for_timeout(1500)
 
 
+def csrf_token(s):
+    token = getattr(s, "_csrf_token", "")
+    if not token:
+        page = s.context.new_page()
+        try:
+            page.goto(f"{BASE}/desk", wait_until="domcontentloaded")
+            page.wait_for_function("() => window.frappe && frappe.csrf_token")
+            token = page.evaluate("frappe.csrf_token")
+        finally:
+            page.close()
+        s._csrf_token = token
+    if not token:
+        raise AssertionError("Không lấy được CSRF token của phiên")
+    return token
+
+
 def api(s, method, **params):
-    res = s.page.request.get(f"{BASE}/api/method/{method}", params=params)
-    return res.json().get("message")
+    res = s.page.request.post(f"{BASE}/api/method/{method}", form=params,
+                              headers={"X-Frappe-CSRF-Token": csrf_token(s)})
+    payload = res.json()
+    if res.status >= 400 or payload.get("exc_type"):
+        raise AssertionError(f"{method}: HTTP {res.status} {payload.get('exception') or payload.get('exc_type')}")
+    return payload.get("message")
 
 
 def api_get(s, path):

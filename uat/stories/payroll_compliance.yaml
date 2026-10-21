@@ -1,0 +1,102 @@
+module: payroll_compliance
+title: Tuân thủ và Quản trị Lương chuyên sâu
+wave: W2
+summary: |
+  Rà soát biến động lương trước khi trình CEO ký; bảo đảm bảng lương đã duyệt bất biến và chênh lệch được bù trừ qua phiếu điều chỉnh kỳ sau;
+  tính lương phân bổ theo ngày hiệu lực quyết định lương; phát hành phiếu lương PDF mã hóa mật khẩu; xuất dữ liệu ngân hàng, kế toán,
+  quyết toán thuế TNCN, BHXH D02-LT, sổ quản lý lao động; thưởng hiệu suất; đợt xét tăng lương thường niên và bảo mật chi phí theo vai trò.
+stories:
+  - id: ST-PC-01
+    role: hr
+    title: Phân bổ lương theo quyết định điều chỉnh có ngày hiệu lực giữa kỳ
+    story: |
+      Là chuyên viên lương, tôi muốn hệ thống tự động phân bổ mức lương theo các quyết định có hiệu lực giữa kỳ
+      và số ngày công thực tế của từng khoảng thời gian, để chi trả đúng quyền lợi mà không phải tách hợp đồng thủ công.
+    ac:
+      - given: Nhân viên có quyết định tăng lương hiệu lực từ ngày 16 trong tháng 30 ngày
+        when: Lập bảng lương và tính lương
+        then: Phiếu lương tính lương cơ bản tlc_effective_base theo trung bình trọng số ngày công thực tế của hai khoảng thời gian
+    brd: [HR-LG-04, HR-LG-15]
+    blueprint_uat: [UAT-PAY-01]
+    cases: [PC-01]
+
+  - id: ST-PC-02
+    role: hr
+    title: Chặn gửi ký khi có biến động lương lớn chưa được giải trình
+    story: |
+      Là HR Lead, tôi muốn hệ thống phát hiện nhân viên có biến động tổng thu nhập/thực lĩnh vượt ngưỡng công ty (20%)
+      hoặc thay đổi lương chưa có quyết định được duyệt, và chặn gửi CEO ký cho đến khi lập phiếu rà soát có chứng từ.
+    ac:
+      - given: Bảng lương có nhân viên biến động > 20% so với kỳ trước
+        when: Hành động > Gửi ký
+        then: Hệ thống chặn lại và yêu cầu hoàn tất phiếu rà soát TLC Payroll Review có đính kèm chứng từ
+      - when: Lập và duyệt phiếu rà soát biến động
+        then: Cho phép chuyển trạng thái Chờ giám đốc ký
+    brd: [HR-LG-06, HR-LG-07]
+    blueprint_uat: [UAT-PAY-02]
+    cases: [PC-02, PC-03]
+
+  - id: ST-PC-03
+    role: ceo
+    title: Bảng lương đã ký bất biến và xử lý chênh lệch bằng phiếu điều chỉnh kỳ sau
+    story: |
+      Là CEO, tôi muốn bảng lương một khi đã ký hoặc đã chi không thể bị sửa đổi hay xóa bỏ; mọi sai sót phát hiện sau đó
+      phải được xử lý bằng phiếu điều chỉnh lương trong kỳ kế tiếp.
+    ac:
+      - given: Bảng lương ở trạng thái Đã ký hoặc Đã chi
+        when: Cố ý sửa trường dữ liệu hoặc hủy/xóa bảng lương
+        then: Hệ thống từ chối và báo lỗi bất biến
+      - when: Lập phiếu TLC Payroll Adjustment tham chiếu phiếu lương gốc đã ký cho kỳ sau
+        then: Phiếu điều chỉnh được ghi nhận và bù trừ vào kỳ tính lương tiếp theo
+    brd: [HR-LG-08, HR-LG-13]
+    blueprint_uat: [UAT-PAY-03]
+    cases: [PC-04, PC-05]
+
+  - id: ST-PC-04
+    role: hr
+    title: Phát hành phiếu lương PDF bảo vệ bằng mật khẩu và xuất dữ liệu ngân hàng
+    story: |
+      Là chuyên viên lương, tôi muốn xuất file chi lương ngân hàng và gửi phiếu lương điện tử mã hóa PDF cho nhân viên,
+      đồng thời hiển thị minh bạch cảnh báo mẫu ngân hàng chưa chứng nhận đối soát.
+    ac:
+      - given: Bảng lương đã duyệt
+        when: Xuất file thanh toán ngân hàng (Bank payment batch)
+        then: Sinh file CSV định dạng ngân hàng kèm ghi chú minh bạch mẫu xuất chưa chứng nhận đối tác ngân hàng
+      - when: Gọi tính năng phát hành phiếu lương qua email
+        then: Hệ thống kích hoạt gửi file PDF có mã hóa mật khẩu theo Payroll Settings
+    brd: [HR-LG-09, HR-LG-10]
+    blueprint_uat: [UAT-PAY-04]
+    cases: [PC-06, PC-07]
+
+  - id: ST-PC-05
+    role: hr
+    title: Báo cáo luật định thuế TNCN, BHXH D02-LT, Sổ quản lý lao động và đợt xét tăng lương
+    story: |
+      Là chuyên viên nhân sự và tiền lương, tôi muốn sinh báo cáo thuế TNCN theo người phụ thuộc thực tế,
+      danh sách biến động BHXH mẫu D02-LT, sổ quản lý lao động theo Nghị định 145/2020, và quản lý đợt xét tăng lương năm.
+    ac:
+      - given: Dữ liệu hồ sơ và kỳ lương đã đóng
+        when: Xuất báo cáo thuế TNCN, D02-LT và Sổ quản lý lao động
+        then: Dữ liệu trích xuất chính xác theo mốc ngày hiệu lực và số người phụ thuộc được kiểm tra
+      - when: Trưởng bộ phận lập đợt xét tăng lương hàng năm vượt ngân sách
+        then: Hệ thống chặn và yêu cầu điều chỉnh trong phạm vi ngân sách được giao
+    brd: [HR-LG-11, HR-LG-16, HR-LG-17, HR-LG-18, HR-LG-19, HR-LG-20, HR-LG-21, HR-LG-22]
+    blueprint_uat: [UAT-PAY-05]
+    cases: [PC-08, PC-09, PC-10]
+
+  - id: ST-PC-06
+    role: support
+    title: Bảo mật báo cáo chi phí lương và mô phỏng ngân sách quỹ lương
+    story: |
+      Là Kế toán trưởng và Giám đốc, tôi muốn xem báo cáo chi phí tổng thể và mô phỏng tác động tăng lương đến quỹ thưởng/bảo hiểm,
+      đồng thời ngăn chặn tuyệt đối nhân viên không có thẩm quyền truy cập dữ liệu chi phí.
+    ac:
+      - given: Người dùng vai trò thông thường (công nhân, trưởng nhà máy)
+        when: Truy cập báo cáo chi phí lương role-private
+        then: Hệ thống từ chối quyền truy cập (Permission Error)
+      - given: Người dùng vai trò TLC Payroll hoặc TLC Director
+        when: Chạy mô phỏng tăng 10% quỹ lương
+        then: Hệ thống hiển thị chi tiết biến động lương cơ bản, bảo hiểm công ty đóng (23.5%) và tổng chi phí năm
+    brd: [HR-LG-14, HR-LG-23, HR-LG-24, HR-LG-25, HR-LG-26]
+    blueprint_uat: [UAT-PAY-06]
+    cases: [PC-11, PC-12]

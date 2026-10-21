@@ -1,206 +1,232 @@
-"""One self-contained HTML file of a UAT run, to send and open offline.
+"""Build or validate one self-contained, navigable offline UAT evidence artifact.
 
-Sections: overview, roles (journeys, pain points, improvements), modules (user stories with Given/When/Then and their cases),
-recorded evidence (video per session, every case with steps, result, screenshot and a button that seeks the video), and
-coverage of the TLC blueprint (322 requirements, 42 blueprint UAT scenarios; see coverage.py).
-Usage: python3 offline_html.py out/<RUN_ID>   ->  out/<RUN_ID>/UAT_TLC_HRM_<RUN_ID>_offline.html
-Videos are the MP4 copies made by run_uat.sh (H.264, seekable), WebM when there is none. Nothing is loaded from the network.
+python3 offline_html.py out/RUN
+python3 offline_html.py --validate out/RUN/UAT_TLC_HRM_RUN_offline.html
+Private catalogue text is embedded only in the generated internal artifact, never source.
 """
 
+import argparse
 import base64
 import html
 import json
+import mimetypes
 import re
-import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
-from coverage import PASSED, compute, load_roles, load_stories
+from coverage import PASSED, compute, load_roles, load_stories, local_media, video_media
 
-HERE = Path(__file__).resolve().parent
-SECTIONS = ["hrms", "ws_manager", "ws_hr", "ws_ceo", "approve", "company"]
-SECTION_LABEL = {"hrms": "App Frappe HR (/hrms)", "ws_manager": "Workspace TLC Quản lý", "ws_hr": "Workspace TLC Nhân sự",
-                 "ws_ceo": "Workspace TLC Điều hành", "approve": "Duyệt đơn", "company": "Xem toàn công ty"}
-e = html.escape
+e = lambda value: html.escape(str(value), quote=True)
 
 
-def data_uri(path, mime):
-    return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
+def data_uri(path):
+    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
 def seconds(stamp):
-    m, s = (stamp or "0:0").split(":")
-    return int(m) * 60 + int(s)
+    parts = str(stamp).split(":")
+    if len(parts) not in (2, 3) or any(not p.isdigit() for p in parts):
+        return None
+    result = 0
+    for part in parts:
+        result = result * 60 + int(part)
+    return result
 
 
 def badge(status):
-    ok = status in ("Đạt", PASSED)
-    cls = "ok" if ok else "out" if status == "Ngoài Frappe" else "plan" if status.startswith("Kế hoạch") else "bad"
-    return f"<span class='b {cls}'>{e(status)}</span>"
-
-
-def image_tag():
-    kustomization = HERE.parent / "deploy" / "k8s" / "kustomization.yaml"
-    found = re.search(r"newTag:\s*(\S+)", kustomization.read_text()) if kustomization.exists() else None
-    return found.group(1) if found else "?"
-
-
-def account_key(entry):
-    return entry.split()[0]
+    return f"<span class='badge {'ok' if status in ('Đạt', PASSED) else 'bad'}'>{e(status)}</span>"
 
 
 def build(run_dir):
+    run_dir = Path(run_dir)
     data = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))
-    results, videos, matrix, run_id = data["results"], data["videos"], data.get("matrix", {}), data["run"]
+    results, videos, run_id = data["results"], data.get("videos", []), str(data["run"])
     modules, roles = load_stories(), load_roles()
-    cov = compute(results, modules)
-    case_of = {r["id"]: r for r in results}
-    story_of_case = {c: s["id"] for m in modules for s in m["stories"] for c in s.get("cases", [])}
-    stories = {s["id"]: s for m in modules for s in m["stories"]}
-    video_index = {v["file"]: i for i, v in enumerate(videos)}
-    passed = sum(r["status"] == "Đạt" for r in results)
-    stories_ok = sum(1 for st in cov["stories"].values() if st == PASSED)
-    brd_ok = sum(r["status"] == PASSED for r in cov["brd"])
-    uat_ok = sum(r["status"] == PASSED for r in cov["uat"])
-    xlsx = next(run_dir.glob("UAT_TLC_HRM_*.xlsx"), None)
-    xlsx_link = (f'<a class="btn" download="{e(xlsx.name)}" href="{data_uri(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}">'
-                 f'Tải sheet UAT (Excel)</a>') if xlsx else ""
-
+    cov = compute(results, modules, evidence_root=run_dir, videos=videos)
+    case_of = {}
+    for row in results:
+        case_of.setdefault(row["id"], []).append(row)
+    story_of = {s["id"]: s for m in modules for s in m.get("stories", [])}
+    media = {}
+    video_html = []
+    for index, video in enumerate(videos):
+        vid = f"video-{index}"
+        path = video_media(run_dir, video.get("file"))
+        media.setdefault(video.get("file"), vid if path else None)
+        player = (f"<video id='{vid}' controls preload='metadata' src='{data_uri(path)}'></video>" if path else "<p class='missing'>Thiếu tệp video đã khai báo.</p>")
+        video_html.append(f"<section id='session-{index}'><h3>{e(video.get('code', ''))} · {e(video.get('role', ''))}</h3>"
+                          f"<p>{e(video.get('account', ''))} · {e(video.get('device', ''))}</p>{player}</section>")
     def case_link(cid):
-        r = case_of.get(cid)
-        return f"<a href='#{e(cid)}'>{e(cid)}</a> {badge(r['status']) if r else badge('Chưa chạy')}"
-
-    # ------------------------------------------------------------------ roles
+        rows = case_of.get(cid, [])
+        status = rows[0].get("status", "Chưa chạy") if len(rows) == 1 else "Kết quả trùng" if rows else "Chưa chạy"
+        return f"<a href='#case-{e(cid)}'>{e(cid)}</a> {badge(status)}"
+    def seek_button(row):
+        vid = media.get(row.get("video"))
+        stamp = seconds(row.get("time", ""))
+        return (f"<button data-video='{vid}' data-seek='{stamp}'>▶ {e(row['time'])}</button>" if vid and stamp is not None else "<span class='missing'>Thiếu video/mốc tua</span>")
+    case_html = []
+    all_case_ids = sorted(set(case_of) | set(cov["missing_cases"]))
+    for cid in all_case_ids:
+        rows = case_of.get(cid, [])
+        details = []
+        for row in rows:
+            shot = local_media(run_dir, row.get("shot"))
+            image = f"<details><summary>Ảnh màn hình</summary><img loading='lazy' alt='{e(cid)}' src='{data_uri(shot)}'></details>" if shot else "<p class='missing'>Thiếu tệp ảnh màn hình.</p>"
+            issues = cov["case_issues"].get(cid, [])
+            fields = (("Tài khoản", "account"), ("Thao tác", "steps"), ("Dữ liệu demo", "data"), ("Mong đợi", "expected"), ("Thực tế", "actual"), ("Thời điểm", "run_at"))
+            links = " · ".join(f"<a href='#story-{e(sid)}'>{e(sid)}</a>" for sid, s in story_of.items() if cid in (s.get("cases") or []))
+            details.append(f"<h4>{e(row.get('function', ''))} {badge(row.get('status', 'Chưa chạy'))} {seek_button(row)}</h4><p>{links}</p>"
+                           + "<dl>" + "".join(f"<dt>{label}</dt><dd>{e(row.get(key, ''))}</dd>" for label, key in fields) + "</dl>"
+                           + (f"<p class='missing'>{e('; '.join(issues))}</p>" if issues else "") + image)
+        case_html.append(f"<article id='case-{e(cid)}'><h3>{e(cid)}</h3>" + ("".join(details) if rows else "<p class='missing'>Chưa chạy: không có kết quả, ảnh hoặc video.</p>") + "</article>")
+    modules_html = []
+    module_nav = []
+    for module in modules:
+        mid = module["module"]
+        module_nav.append(f"<a href='#mod-{e(mid)}'>{e(module.get('title') or module.get('module') or mid)}</a>")
+        stories_html = []
+        for story in module.get("stories", []):
+            ac_rows = []
+            for index, ac in enumerate(story.get("ac", []), 1):
+                cases = ac.get("cases") or []
+                ac_rows.append(f"<tr id='ac-{e(story['id'])}-{index}'><td>{index}</td><td>{e(ac.get('given', ''))}</td><td>{e(ac.get('when', ''))}</td><td>{e(ac.get('then', ''))}</td><td>"
+                               + ("<br>".join(case_link(c) for c in cases) if cases else "<span class='missing'>Chưa ánh xạ AC → case</span>") + "</td></tr>")
+            refs = " · ".join(f"<a href='#ref-{e(ref)}'>{e(ref)}</a>" if any(r["id"] == ref for r in cov["brd"] + cov["uat"]) else f"<span class='missing'>{e(ref)} (không có catalogue)</span>" for ref in (story.get("brd") or []) + (story.get("blueprint_uat") or []))
+            story_cases = " · ".join(case_link(cid) for cid in story.get("cases", []))
+            stories_html.append(f"<article id='story-{e(story['id'])}'><h4>{e(story['id'])} · {e(story.get('title') or story['id'])} {badge(cov['stories'][story['id']])}</h4>"
+                                f"<p>{e(story.get('story', ''))}</p><p>Vai trò: {e(story.get('role', ''))} · {refs}</p>"
+                                f"<table><tr><th>AC</th><th>Given</th><th>When</th><th>Then</th><th>Cases</th></tr>{''.join(ac_rows)}</table><p>{story_cases}</p></article>")
+        mapped = {s["id"] for s in module.get("stories", [])}
+        executed = {cid for sid in mapped for cid in story_of[sid].get("cases", []) if cid in case_of}
+        modules_html.append(f"<section id='mod-{e(mid)}'><h3>{e(module.get('title') or module.get('module') or mid)} · {e(module.get('wave', ''))}</h3><p>{e(module.get('summary', ''))}</p>"
+                            f"<p>{len(executed)} case có kết quả; {sum(cov['stories'][sid] == PASSED for sid in mapped)}/{len(mapped)} story đủ bằng chứng.</p>{''.join(stories_html)}</section>")
     role_html = []
     for role in roles:
-        keys = {account_key(a) for a in role.get("accounts", [])}
-        role_videos = [f"<a href='#video{i}'>▶ {e(v['code'])} · {e(v['account'])}</a>" for i, v in enumerate(videos) if v["account"] in keys]
-        steps = "".join(f"<li><a href='#{e(sid)}'>{e(sid)}</a> {e(stories[sid]['title'])} {badge(cov['stories'].get(sid, 'Chưa chạy'))}</li>"
-                        for sid in role.get("journeys", []) if sid in stories)
-        role_html.append(f"""<section class="role" id="role-{e(role['key'])}"><h3>{e(role['title'])}</h3>
-<p class="muted">{e(role.get('people', ''))} · Tài khoản demo: {e(', '.join(role.get('accounts', [])))}</p>
-<p><b>Làm việc ở đâu:</b> {e(role.get('interface', ''))}</p>
-<div class="cols"><div><h4>Mục tiêu</h4><ul>{''.join(f'<li>{e(g)}</li>' for g in role.get('goals', []))}</ul></div>
-<div><h4>Nỗi đau hiện tại</h4><ul>{''.join(f'<li>{e(p)}</li>' for p in role.get('pain_points', []))}</ul></div>
-<div><h4>TLC HRM cải tiến</h4><ul>{''.join(f'<li>{e(p)}</li>' for p in role.get('improvements', []))}</ul></div></div>
-<h4>Hành trình (user story)</h4><ol>{steps}</ol><p>{' · '.join(role_videos)}</p></section>""")
-
-    # ------------------------------------------------------------------ modules and stories
-    module_html = []
-    for m in modules:
-        cards = []
-        for s in m["stories"]:
-            ac = "".join(f"<tr><td>{e(a.get('given', ''))}</td><td>{e(a.get('when', ''))}</td><td>{e(a.get('then', ''))}</td></tr>"
-                         for a in s.get("ac", []))
-            refs = " ".join(f"<code>{e(x)}</code>" for x in (s.get("brd") or []) + (s.get("blueprint_uat") or []))
-            cards.append(f"""<article class="story" id="{e(s['id'])}"><header><b>{e(s['id'])}</b> {e(s['title'])}
-{badge(cov['stories'].get(s['id'], 'Chưa chạy'))}</header><p class="say">{e(s['story'])}</p>
-<table class="ac"><tr><th>Cho trước (Given)</th><th>Khi (When)</th><th>Thì (Then)</th></tr>{ac}</table>
-<p class="muted">Yêu cầu: {refs or '-'}</p><p>Trường hợp kiểm thử: {' · '.join(case_link(c) for c in s.get('cases', []))}</p></article>""")
-        ok = sum(cov["stories"].get(s["id"]) == PASSED for s in m["stories"])
-        module_html.append(f"""<section id="mod-{e(m['module'])}"><h3>{e(m['title'])} <small>{e(m.get('wave', ''))} · {ok}/{len(m['stories'])} story đạt</small></h3>
-<p>{e(m.get('summary', ''))}</p>{''.join(cards)}</section>""")
-
-    # ------------------------------------------------------------------ evidence
-    evidence = []
-    for i, v in enumerate(videos):
-        video_path = run_dir / v["file"]
-        mp4 = video_path.with_suffix(".mp4")
-        video_path, mime = (mp4, "video/mp4") if mp4.exists() else (video_path, "video/webm")
-        cases = [r for r in results if r["video"] == v["file"]]
-        items = []
-        for r in cases:
-            shot = run_dir / r["shot"] if r.get("shot") else None
-            image = (f"<details><summary>Ảnh màn hình</summary><img loading='lazy' src='{data_uri(shot, 'image/png')}' alt='{e(r['id'])}'>"
-                     f"</details>") if shot and shot.exists() else ""
-            sid = story_of_case.get(r["id"], "")
-            items.append(f"""<article id="{e(r['id'])}" class="case {'ok' if r['status'] == 'Đạt' else 'bad'}">
-<header><b>{e(r['id'])}</b> {e(r['function'])} {f"<a class='tag' href='#{e(sid)}'>{e(sid)}</a>" if sid else ''}<span class="st">{e(r['status'])}</span>
-<button onclick="seek('video{i}',{seconds(r['time'])})">▶ Xem từ {e(r['time'])}</button></header>
-<dl><dt>Thao tác</dt><dd>{e(r['steps'])}</dd><dt>Dữ liệu</dt><dd>{e(r['data']) or '-'}</dd>
-<dt>Kết quả mong đợi</dt><dd>{e(r['expected'])}</dd><dt>Kết quả thực tế</dt><dd>{e(r['actual'])}</dd>
-<dt>Thời điểm chạy</dt><dd>{e(r['run_at'])}</dd></dl>{image}</article>""")
-        player = (f"<video id='video{i}' controls preload='metadata' src='{data_uri(video_path, mime)}'></video>"
-                  if video_path.exists() else "<p>Không có video.</p>")
-        evidence.append(f"""<section><h3 id="v{i}">{e(v['code'])} · {e(v['role'])}</h3>
-<p class="muted">Tài khoản {e(v['account'])}@demo.example · {e(v['device'])} · {len(cases)} trường hợp</p>{player}{''.join(items)}</section>""")
-    orphans = [r for r in results if r["video"] not in video_index]
-    if orphans:
-        evidence.append("<section><h3>Bước không ghi hình</h3><table><tr><th>Mã</th><th>Tài khoản</th><th>Chức năng</th><th>Thực tế</th><th>KQ</th></tr>"
-                        + "".join(f"<tr><td id='{e(r['id'])}'>{e(r['id'])}</td><td>{e(r['account'])}</td><td>{e(r['function'])}</td>"
-                                  f"<td>{e(r['actual'])}</td><td>{badge(r['status'])}</td></tr>" for r in orphans) + "</table></section>")
-
-    # ------------------------------------------------------------------ coverage
-    if cov["has_catalog"]:
-        domain_rows = "".join(f"<tr><td>{e(d['label'])} <code>{e(d['domain'])}</code></td><td>{e(d['wave'])}</td><td>{d['total']}</td><td>{d['p0']}</td>"
-                              f"<td>{d['passed']}</td><td>{d['partial']}</td><td>{d['outside']}</td>"
-                              f"<td>{d['total'] - d['passed'] - d['partial'] - d['outside']}</td></tr>" for d in cov["domains"])
-        brd_details = "".join(
-            f"<details><summary>{e(d['label'])} ({d['total']})</summary><table><tr><th>Mã</th><th>Ưu tiên</th><th>Yêu cầu</th><th>Trạng thái</th><th>Story</th></tr>"
-            + "".join(f"<tr><td>{e(r['id'])}</td><td>{e(r['priority'])}</td><td>{e(r['text'][:220])}{'…' if len(r['text']) > 220 else ''}"
-                      f"{('<br><i>' + e(r['note']) + '</i>') if r['note'] else ''}</td><td>{badge(r['status'])}</td>"
-                      f"<td>{' '.join(f'<a href=#{e(s)}>{e(s)}</a>' for s in r['stories'])}</td></tr>"
-                      for r in cov["brd"] if r["domain"] == d["domain"]) + "</table></details>" for d in cov["domains"])
-        uat_rows = "".join(f"<tr><td>{e(u['id'])}</td><td>{e(u['scenario'])}</td><td>{e(u['assertion'])}</td><td>{badge(u['status'])}</td>"
-                           f"<td>{' '.join(f'<a href=#{e(s)}>{e(s)}</a>' for s in u['stories'])}</td></tr>" for u in cov["uat"])
-        coverage_html = f"""<section><h3>Theo phân hệ (322 yêu cầu BRD)</h3><table><tr><th>Phân hệ</th><th>Đợt</th><th>Yêu cầu</th><th>P0</th>
-<th>Đạt UAT</th><th>Có story, chưa đạt</th><th>Ngoài Frappe</th><th>Còn theo kế hoạch</th></tr>{domain_rows}</table></section>
-<section><h3>Chi tiết từng yêu cầu</h3>{brd_details}</section>
-<section><h3>42 kịch bản UAT của blueprint</h3><table><tr><th>Mã</th><th>Kịch bản</th><th>Điều kiện đạt</th><th>Trạng thái</th><th>Story</th></tr>{uat_rows}</table></section>"""
-    else:
-        coverage_html = "<section><p>Không có catalogue blueprint trên máy tạo báo cáo (TLC_CATALOG).</p></section>"
-
-    matrix_rows = "".join(f"<tr><td>{e(acc)}@demo.example</td>" + "".join(f"<td class='c'>{'✓' if k in keys else ''}</td>" for k in SECTIONS) + "</tr>"
-                          for acc, keys in matrix.items())
-    module_rows = "".join(
-        f"<tr><td><a href='#mod-{e(m['module'])}'>{e(m['title'])}</a></td><td>{e(m.get('wave', ''))}</td><td>{len(m['stories'])}</td>"
-        f"<td>{sum(cov['stories'].get(s['id']) == PASSED for s in m['stories'])}</td>"
-        f"<td>{sum(len(s.get('cases', [])) for s in m['stories'])}</td></tr>" for m in modules)
-
-    page = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>UAT TLC HRM {e(run_id)}</title>
-<style>
-body{{font:14px/1.5 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;color:#1f272e;background:#f8f8f8;margin:0}}
-nav{{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid #e2e2e2;padding:10px 20px}} nav a{{margin-right:18px;color:#1f272e;font-weight:600;text-decoration:none}}
-main{{max-width:1180px;margin:0 auto;padding:20px 20px 60px}} h1{{font-size:24px;margin:0}} h2{{font-size:20px;margin:32px 0 12px}}
-h3{{font-size:17px;margin:0 0 8px}} h3 small{{color:#6c7680;font-weight:400;font-size:13px}} h4{{font-size:14px;margin:10px 0 4px}}
-.muted{{color:#6c7680;margin:4px 0 10px}} section{{background:#fff;border:1px solid #e2e2e2;border-radius:8px;padding:16px 18px;margin:0 0 16px}}
-.kpi{{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}} .kpi div{{background:#fff;border:1px solid #e2e2e2;border-radius:8px;padding:10px 16px;min-width:130px}}
-.kpi b{{display:block;font-size:22px}} .btn{{display:inline-block;background:#171717;color:#fff;border-radius:6px;padding:7px 14px;text-decoration:none}}
-table{{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}} th,td{{border-bottom:1px solid #ededed;padding:6px 8px;text-align:left;vertical-align:top}}
-th{{background:#f3f3f3;font-weight:600}} td.c{{text-align:center;color:#28a745;font-weight:700}} a{{color:#2490ef}} code{{background:#f3f3f3;border-radius:4px;padding:0 4px;font-size:12px}}
-.b{{display:inline-block;border-radius:10px;padding:0 8px;font-size:12px;font-weight:600;white-space:nowrap}} .b.ok{{background:#e4f5e9;color:#16794c}}
-.b.bad{{background:#fff0f0;color:#c0392b}} .b.plan{{background:#f3f3f3;color:#6c7680}} .b.out{{background:#fff5e0;color:#a0610c}}
-.cols{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}} .cols ul{{margin:0;padding-left:18px}}
-.story,.case{{border:1px solid #ededed;border-left:4px solid #2490ef;border-radius:6px;padding:10px 12px;margin:10px 0}}
-.case{{border-left-color:#28a745}} .case.bad{{border-left-color:#e24c4c}} .say{{font-style:italic;margin:6px 0}}
-.story header,.case header{{display:flex;gap:10px;align-items:center;flex-wrap:wrap}} .st{{margin-left:auto;font-weight:600;color:#28a745}} .bad .st{{color:#e24c4c}}
-.tag{{font-size:12px;background:#eef6fe;border-radius:4px;padding:0 6px;text-decoration:none}}
-.case button{{border:1px solid #d1d1d1;background:#fff;border-radius:6px;padding:3px 10px;cursor:pointer}}
-dl{{display:grid;grid-template-columns:150px 1fr;gap:3px 12px;margin:8px 0 0}} dt{{color:#6c7680}} dd{{margin:0}}
-details summary{{cursor:pointer;color:#2490ef;margin:6px 0}} details img{{max-width:100%;border:1px solid #e2e2e2;border-radius:6px;margin-top:6px}}
-video{{width:100%;background:#000;border-radius:6px;margin:4px 0 12px}}
-</style></head><body>
-<nav><a href="#tong-quan">Tổng quan</a><a href="#vai-tro">Vai trò &amp; hành trình</a><a href="#phan-he">Phân hệ &amp; story</a>
-<a href="#bang-chung">Bằng chứng video</a><a href="#phu">Phủ yêu cầu</a></nav><main>
-<h1 id="tong-quan">TLC HRM trên Frappe HR – UAT theo hành trình người dùng</h1>
-<p class="muted">Lần chạy {e(run_id)} · image tlc-hr:{e(image_tag())} · giao diện desktop web 1366×820 · dữ liệu demo (người và số liệu giả lập) · một file, mở offline bằng trình duyệt</p>
-<div class="kpi"><div>Trường hợp đạt<b>{passed}/{len(results)}</b></div><div>User story đạt<b>{stories_ok}/{len(stories)}</b></div>
-<div>Phân hệ đã UAT<b>{len(modules)}</b></div><div>Video<b>{len(videos)}</b></div>
-<div>Yêu cầu BRD đạt UAT<b>{brd_ok}/{len(cov['brd']) or '?'}</b></div><div>Kịch bản blueprint đạt<b>{uat_ok}/{len(cov['uat']) or '?'}</b></div></div>
-<p>{xlsx_link}</p>
-<section><h3>Phân hệ trong lần chạy</h3><table><tr><th>Phân hệ</th><th>Đợt</th><th>Story</th><th>Story đạt</th><th>Trường hợp</th></tr>{module_rows}</table></section>
-<section><h3>Ma trận chức năng theo tài khoản</h3><table><tr><th>Tài khoản</th>{''.join(f'<th>{e(SECTION_LABEL[k])}</th>' for k in SECTIONS)}</tr>{matrix_rows}</table></section>
-<h2 id="vai-tro">Vai trò &amp; hành trình</h2>{''.join(role_html)}
-<h2 id="phan-he">Phân hệ &amp; user story</h2>{''.join(module_html)}
-<h2 id="bang-chung">Bằng chứng video</h2><p class="muted">Mỗi phiên là một video liền mạch; "▶ Xem từ" tua đến đúng trường hợp.</p>{''.join(evidence)}
-<h2 id="phu">Phủ yêu cầu blueprint TLC</h2>{coverage_html}
-</main><script>function seek(id,t){{const v=document.getElementById(id);v.scrollIntoView({{behavior:'smooth',block:'center'}});v.currentTime=t;v.play();}}</script>
-</body></html>"""
-    target = run_dir / f"UAT_TLC_HRM_{run_id}_offline.html"
+        sids = list(dict.fromkeys((role.get("journeys") or []) + [sid for sid, s in story_of.items() if role["key"] in (s.get("roles") or [s.get("role")])]))
+        journey = "".join(f"<li><a href='#story-{e(sid)}'>{e(sid)} · {e(story_of[sid].get('title') or sid)}</a> {badge(cov['stories'][sid])}</li>" if sid in story_of else f"<li class='missing'>{e(sid)}: chưa khai báo story</li>" for sid in sids)
+        accounts = {str(account).split()[0].split("@")[0] for account in role.get("accounts", [])}
+        sessions = " · ".join(f"<a href='#session-{index}'>{e(v.get('code', ''))} · {e(v.get('account', ''))}</a>" for index, v in enumerate(videos) if str(v.get("account", "")).split("@")[0] in accounts)
+        role_html.append(f"<section id='role-{e(role['key'])}'><h3>{e(role['title'])}</h3><p>{e(role.get('interface', ''))}</p><p>{e(', '.join(role.get('accounts', [])))}</p>"
+                         + "".join(f"<h4>{label}</h4><ul>" + "".join(f"<li>{e(item)}</li>" for item in role.get(key, [])) + "</ul>" for key, label in (("goals", "Mục tiêu"), ("pain_points", "Vấn đề"), ("improvements", "Hỗ trợ của hệ thống")))
+                         + f"<ol>{journey}</ol><p>{sessions or '<span class=missing>Chưa có phiên video cho vai trò.</span>'}</p></section>")
+    coverage_html = []
+    for key, label in (("brd", "Yêu cầu BRD"), ("uat", "Kịch bản blueprint")):
+        rows = []
+        for row in cov[key]:
+            links = "<br>".join(f"<a href='#story-{e(link['story'])}'>{e(link['story'])}</a>: {e(link['assertion'] or 'Chưa xác nhận toàn bộ hành vi')} "
+                                  + " · ".join(case_link(cid) for cid in link["cases"]) for link in row["evidence"])
+            text = row.get("text") or (row.get("scenario", "") + " — " + row.get("assertion", ""))
+            rows.append(f"<tr id='ref-{e(row['id'])}'><td>{e(row['id'])}<br>{e(row['domain'])}</td><td>{e(text)}<p>{e(row['note'])}</p></td><td>{badge(row['status'])}</td><td>{links or '<span class=missing>Chưa có story/case.</span>'}</td></tr>")
+        coverage_html.append(f"<section><h3>{label}: {sum(r['status'] == PASSED for r in cov[key])}/{len(cov[key])} đủ bằng chứng</h3><table><tr><th>Mã</th><th>Hành vi đầy đủ</th><th>Kết quả</th><th>Story → cases → video</th></tr>{''.join(rows)}</table></section>")
+    domain_rows = "".join(f"<tr><td>{e(d['label'])} ({e(d['domain'])})</td><td>{d['total']}</td><td>{d['passed']}</td><td>{d['partial']}</td><td>{d['total']-d['passed']-d['partial']}</td></tr>" for d in cov["domains"])
+    errors = cov["errors"] + ["Chưa chạy case: " + cid for cid in cov["missing_cases"]] + [cid + ": " + "; ".join(issues) for cid, issues in cov["case_issues"].items() if issues]
+    problems = "<ul>" + "".join(f"<li>{e(error)}</li>" for error in errors) + "</ul>" if errors else "<p>Không phát hiện thiếu bằng chứng theo cấu trúc khai báo; không thay thế nghiệm thu nghiệp vụ.</p>"
+    attachments = []
+    for pattern in ("*.xlsx", "*.pdf"):
+        for path in sorted(run_dir.glob(pattern)):
+            if local_media(run_dir, path.name):
+                attachments.append(f"<a download='{e(path.name)}' href='{data_uri(path)}'>{e(path.name)}</a>")
+    manifest = {"run": run_id, "catalog_complete": cov["catalog_complete"], "results": len(results), "videos_declared": len(videos),
+                "videos_embedded": sum(bool(video_media(run_dir, v.get("file"))) for v in videos), "missing_cases": cov["missing_cases"],
+                "evidence_issues": {k: v for k, v in cov["case_issues"].items() if v}, "traceability_errors": cov["errors"]}
+    manifest_json = json.dumps(manifest, ensure_ascii=False).replace("<", "\\u003c")
+    page = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UAT TLC HRM {e(run_id)}</title>
+<style>body{{font:14px/1.5 system-ui,sans-serif;color:#222;background:#f8f8f8;margin:0}}nav{{position:sticky;top:0;background:white;padding:12px;border-bottom:1px solid #ddd;z-index:2}}nav a{{margin-right:18px}}main{{max-width:1200px;margin:auto;padding:20px}}section,article{{background:white;border:1px solid #ddd;border-radius:6px;padding:16px;margin:12px 0}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #ddd}}a{{color:#1765a0}}.badge{{display:inline-block;padding:1px 7px;border-radius:10px;background:#fff0ec}}.ok{{background:#e5f5e9}}.missing,.bad{{color:#a73321}}video,img{{max-width:100%}}video{{width:100%;background:#000}}dl{{display:grid;grid-template-columns:130px 1fr;gap:5px}}dd{{margin:0;white-space:pre-wrap}}:target{{scroll-margin-top:65px;outline:2px solid #1765a0}}button{{cursor:pointer}}@media(max-width:700px){{table{{display:block;overflow:auto}}main{{padding:8px}}}}</style></head><body>
+<nav><a href='#overview'>Tổng quan</a><a href='#roles'>Vai trò</a><a href='#modules'>Phân hệ</a><a href='#evidence'>Bằng chứng</a><a href='#coverage'>Traceability</a><a href='#gaps'>Thiếu bằng chứng</a></nav><main>
+<h1 id='overview'>TLC HRM — UAT desktop theo vai trò</h1><p>Lần chạy {e(run_id)}. Báo cáo nội bộ: chứa dữ liệu demo và nội dung catalogue; không đưa lên kho công khai.</p>
+<p>{sum(r.get('status') == 'Đạt' for r in results)}/{len(results)} kết quả được ghi Đạt; {sum(s == PASSED for s in cov['stories'].values())}/{len(story_of)} story đủ AC và bằng chứng. {len(modules)} module được khai báo — không phải số module đã đạt.</p>
+<p>Catalogue: {len(cov['brd'])}/322 yêu cầu; {len(cov['uat'])}/42 blueprint cases. Liên kết story không tự chứng minh toàn bộ yêu cầu; mọi nghĩa vụ đã ánh xạ phải đạt. Ngoài Frappe vẫn cần bằng chứng, không miễn nghiệm thu.</p><p>{' · '.join(attachments)}</p>
+<section><h3>Phân hệ và bằng chứng</h3><p>{' · '.join(module_nav)}</p><table><tr><th>Phân hệ</th><th>BRD</th><th>Đủ bằng chứng</th><th>Có story, chưa đủ</th><th>Chưa có story</th></tr>{domain_rows}</table></section>
+<h2 id='gaps'>Thiếu bằng chứng / lỗi ánh xạ</h2><section>{problems}</section><h2 id='roles'>Vai trò và hành trình</h2>{''.join(role_html)}
+<h2 id='modules'>Phân hệ, story và AC</h2>{''.join(modules_html)}<h2 id='evidence'>Phiên video và từng case</h2>{''.join(video_html)}{''.join(case_html)}
+<h2 id='coverage'>322 yêu cầu / 42 blueprint cases</h2>{''.join(coverage_html)}</main><script id='evidence-manifest' type='application/json'>{manifest_json}</script>
+<script>document.querySelectorAll('button[data-video]').forEach(b=>b.addEventListener('click',()=>{{const v=document.getElementById(b.dataset.video);if(!v)return;v.scrollIntoView({{behavior:'smooth',block:'center'}});const go=()=>{{v.currentTime=Number(b.dataset.seek);v.play().catch(()=>{{}})}};if(v.readyState)go();else{{v.addEventListener('loadedmetadata',go,{{once:true}});v.load()}}}}));</script></body></html>"""
+    # Run IDs are metadata, not paths.
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", run_id)
+    target = run_dir / f"UAT_TLC_HRM_{safe_id}_offline.html"
     target.write_text(page, encoding="utf-8")
     return target
 
 
+class ArtifactParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.ids, self.refs, self.seeks, self.errors = set(), [], [], []
+        self.manifest, self.in_manifest = "", False
+        self.videos = 0
+
+    def handle_starttag(self, tag, attributes):
+        attrs = dict(attributes)
+        if attrs.get("id"):
+            if attrs["id"] in self.ids:
+                self.errors.append("Duplicate anchor: " + attrs["id"])
+            self.ids.add(attrs["id"])
+        self.in_manifest = tag == "script" and attrs.get("id") == "evidence-manifest"
+        if attrs.get("data-video"):
+            self.seeks.append(attrs["data-video"])
+        for key in ("src", "href", "poster"):
+            value = attrs.get(key, "")
+            if not value:
+                continue
+            if value.startswith("#"):
+                self.refs.append(value[1:])
+            elif value.startswith("data:"):
+                try:
+                    header, encoded = value.split(",", 1)
+                    raw = base64.b64decode(encoded, validate=True)
+                    if not raw:
+                        raise ValueError("empty media")
+                    if tag == "video":
+                        if not (("video/mp4" in header and raw[4:8] == b"ftyp") or ("video/webm" in header and raw[:4] == b"\x1aE\xdf\xa3")):
+                            raise ValueError("invalid MP4/WebM signature")
+                        self.videos += 1
+                    if tag == "img" and not (raw.startswith(b"\x89PNG\r\n\x1a\n") or raw.startswith(b"\xff\xd8\xff") or raw.startswith((b"GIF87a", b"GIF89a", b"RIFF"))):
+                        raise ValueError("invalid image signature")
+                except (ValueError, base64.binascii.Error) as exc:
+                    self.errors.append("Invalid embedded media: " + str(exc))
+            else:
+                self.errors.append("Non-self-contained resource: " + value)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self.in_manifest = False
+
+    def handle_data(self, text):
+        if self.in_manifest:
+            self.manifest += text
+
+
+def validate(path):
+    parser = ArtifactParser()
+    parser.feed(Path(path).read_text(encoding="utf-8"))
+    parser.errors.extend("Missing target: " + ref for ref in parser.refs + parser.seeks if ref not in parser.ids)
+    try:
+        manifest = json.loads(parser.manifest)
+        if manifest["videos_embedded"] != parser.videos or manifest["videos_declared"] != parser.videos:
+            parser.errors.append("Declared/embedded video counts differ")
+        if not manifest["catalog_complete"]:
+            parser.errors.append("Catalogue does not contain exactly 322 BRD and 42 blueprint cases")
+        if manifest["missing_cases"] or manifest["evidence_issues"] or manifest["traceability_errors"]:
+            parser.errors.append("Report visibly contains missing/invalid evidence or traceability gaps; inspect gaps section")
+    except (ValueError, KeyError):
+        parser.errors.append("Missing/invalid evidence manifest")
+    return sorted(set(parser.errors))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("path", type=Path)
+    parser.add_argument("--validate", action="store_true")
+    args = parser.parse_args()
+    if args.validate:
+        errors = validate(args.path)
+        print(json.dumps({"artifact": str(args.path), "valid": not errors, "errors": errors}, ensure_ascii=False, indent=2))
+        return int(bool(errors))
+    target = build(args.path)
+    print(target, f"{target.stat().st_size / 1e6:.1f} MB")
+    return 0
+
+
 if __name__ == "__main__":
-    path = build(Path(sys.argv[1]))
-    print(path, f"{path.stat().st_size / 1e6:.1f} MB")
+    raise SystemExit(main())

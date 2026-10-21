@@ -1,0 +1,68 @@
+module: payroll
+title: Lương Việt Nam
+wave: W2
+summary: HR tính lương tháng khi mọi kỳ công đã khoá; cấu trúc lương "TLC Lương 2026" tính BHXH/BHYT/BHTN có trần theo ngày hiệu lực, thuế TNCN 5 bậc, tăng ca tách phần chịu thuế và phụ trội miễn thuế; CEO ký thì phiếu lương ghi sổ và hiện trên app; kế toán xác nhận đã chi bằng chứng từ ngân hàng.
+stories:
+  - id: ST-PY-01
+    role: hr
+    title: Tính lương chỉ khi kỳ công đã khoá
+    story: Là chuyên viên lương, tôi muốn hệ thống chỉ cho tính lương tháng khi kỳ công của mọi nhà máy và hội sở đã khoá, để không trả lương trên số công còn sửa được.
+    ac:
+      - given: kỳ công tháng hiện tại chưa khoá
+        when: Hành động > Tính lương
+        then: bị chặn, liệt kê phạm vi chưa khoá
+      - given: kỳ công tháng trước đã khoá cả 4 phạm vi
+        when: tạo bảng lương, lấy nhân viên, Tính lương
+        then: có phiếu lương nháp cho từng người; tăng ca đã duyệt được trả thành Tiền tăng ca (chịu thuế) và Phụ trội tăng ca (miễn thuế)
+    brd: [HR-LG-03, HR-LG-04, HR-LG-05, HR-LG-13]
+    blueprint_uat: [UAT-PAY-01]
+    cases: [PR-01, PR-02]
+  - id: ST-PY-02
+    role: ceo
+    title: CEO ký bảng lương với số liệu trên một dòng
+    story: Là CEO, tôi muốn thấy tổng thu nhập, thực lĩnh, thuế, tăng ca và phần công ty đóng ngay trên bảng lương trước khi ký, để duyệt quỹ lương có căn cứ.
+    ac:
+      - given: HR gửi ký
+        then: workspace TLC Điều hành có thẻ Bảng lương chờ ký; dòng đầu form ghi số phiếu, tổng thu nhập, thực lĩnh, thuế TNCN, tăng ca, BH công ty đóng
+      - when: Hành động > Ký duyệt
+        then: phiếu lương được ghi sổ (bút toán chi phí lương) và hiện trên app của nhân viên
+    brd: [HR-LG-07, HR-LG-08, HR-LG-11, HR-LG-24]
+    blueprint_uat: []
+    cases: [PR-03, PR-04]
+  - id: ST-PY-03
+    role: support
+    title: Kế toán xác nhận đã chi bằng chứng từ ngân hàng
+    story: Là kế toán, tôi muốn xác nhận đã chi lương bằng số chứng từ chuyển khoản, để việc chi tách khỏi việc duyệt và có dấu vết.
+    ac:
+      - given: bảng lương đã ký
+        when: chưa nhập số chứng từ
+        then: không có hành động Xác nhận đã chi
+      - when: nhập số chứng từ và ngày chi, Hành động > Xác nhận đã chi
+        then: bảng lương Đã chi, bút toán ngân hàng mang số chứng từ được ghi sổ
+    brd: [HR-LG-07, HR-CHG-18]
+    blueprint_uat: [UAT-PAY-03]
+    cases: [PR-05]
+  - id: ST-PY-04
+    role: worker
+    title: Người lao động xem phiếu lương của mình, không ai khác xem được
+    story: Là người lao động, tôi muốn xem phiếu lương có từng khoản bảo hiểm, thuế, phụ cấp trên app, và lương của tôi không lộ cho người không có quyền.
+    ac:
+      - given: CEO đã ký
+        then: công nhân thấy phiếu lương tháng trong app (có phụ cấp ăn trưa, BHXH, BHYT, BHTN, thực lĩnh)
+      - given: nhân viên văn phòng
+        then: chỉ thấy phiếu lương của chính mình
+      - given: trưởng nhà máy
+        then: không xem được phiếu lương của công nhân
+    brd: [HR-LG-09, HR-LG-25]
+    blueprint_uat: [UAT-PAY-04]
+    cases: [PR-06, PR-07, PR-08]
+  - id: ST-PY-05
+    role: hr
+    title: Tham số lương theo luật có ngày hiệu lực
+    story: Là HR, tôi muốn tham số lương cơ sở, lương tối thiểu vùng, giảm trừ, tỷ lệ bảo hiểm được cập nhật theo luật có ngày hiệu lực, để phiếu lương mọi tháng tính đúng luật của tháng đó.
+    ac:
+      - given: VN Payroll Settings
+        then: lương cơ sở 2.530.000 từ 01-07-2026, giảm trừ 15.500.000 / 6.200.000
+    brd: [HR-LG-01, HR-LG-02, HR-LG-05]
+    blueprint_uat: [UAT-PAY-05]
+    cases: [HR-05]

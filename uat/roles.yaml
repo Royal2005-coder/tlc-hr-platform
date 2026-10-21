@@ -18,7 +18,7 @@ roles:
       - Giải trình công trên app, đi thẳng tới trưởng nhà máy; hệ thống tự điền ca
       - Chấm công GPS trên app, chỉ nhận trong bán kính nhà máy
       - Trạng thái và lý do từ chối hiện ngay trên đơn
-    journeys: [ST-GOV-01, ST-AT-01, ST-AT-02, ST-LV-04, ST-LV-05, ST-LV-11, ST-OT-03]
+    journeys: [ST-GOV-01, ST-AT-01, ST-AT-02, ST-LV-04, ST-LV-05, ST-LV-11, ST-OT-03, ST-PY-04]
   - key: office
     title: Nhân viên văn phòng hội sở SG
     accounts: [an (Kinh doanh)]
@@ -52,7 +52,7 @@ roles:
     journeys: [ST-GOV-01, ST-LV-03, ST-LV-06, ST-LV-07, ST-OT-01, ST-OT-02, ST-AT-04]
   - key: hr
     title: HR văn phòng SG
-    accounts: [hoa (Giám đốc nhân sự – HR Lead), lan (Chuyên viên nhân sự)]
+    accounts: [hoa (Giám đốc nhân sự – HR Lead), lan (Chuyên viên nhân sự), phuong (Chuyên viên tính lương)]
     people: Phòng Nhân sự và Hành chính, 6 người
     interface: Desk – workspace TLC Nhân sự (thẻ, biểu đồ, danh sách chờ, báo cáo số dư phép, tham số lương VN)
     goals: [Duyệt cấp cuối, Chốt công và tính lương đúng luật, Nắm toàn bộ vòng đời nhân sự]
@@ -66,7 +66,7 @@ roles:
       - Báo cáo số dư phép mở sẵn cả năm; tham số lương VN 2026 có ngày hiệu lực
       - HR không tự duyệt đơn của mình; HR khác duyệt thay
       - Kỳ công liệt kê việc chưa xử lý; sau khi CEO khoá chỉ sửa bằng điều chỉnh sau chốt có nhật ký
-    journeys: [ST-GOV-01, ST-LV-05, ST-LV-08, ST-LV-09, ST-AT-03, ST-AT-06]
+    journeys: [ST-GOV-01, ST-LV-05, ST-LV-08, ST-LV-09, ST-AT-03, ST-AT-06, ST-PY-01, ST-PY-05]
   - key: ceo
     title: CEO văn phòng SG
     accounts: [thanh (Tổng giám đốc)]
@@ -80,13 +80,13 @@ roles:
       - Workspace có thẻ và biểu đồ toàn công ty
       - Chỉ nhận đề nghị tăng ca sau khi người lao động đồng ý
       - Ký khoá kỳ công từ thẻ Kỳ công chờ ký
-    journeys: [ST-GOV-01, ST-LV-09, ST-LV-10, ST-OT-04, ST-AT-05]
+    journeys: [ST-GOV-01, ST-LV-09, ST-LV-10, ST-OT-04, ST-AT-05, ST-PY-02]
   - key: support
     title: Vai trò hỗ trợ (có video)
-    accounts: [quang (Trưởng phòng Kinh doanh), ketoan (Kế toán – từ đợt Lương)]
+    accounts: [quang (Trưởng phòng Kinh doanh), chi (Kế toán)]
     people: Trưởng phòng hội sở duyệt cấp 1; kế toán xác nhận chi lương, tạm ứng
     interface: Desk
     goals: [Duyệt cấp 1 cho phòng mình, Xác nhận đã chi (không phải duyệt)]
     pain_points: [Không biết đơn nào đến lượt mình]
     improvements: [Workspace TLC Quản lý với thẻ Đơn chờ tôi duyệt]
-    journeys: [ST-LV-06]
+    journeys: [ST-LV-06, ST-PY-03]

@@ -1,0 +1,75 @@
+module: services
+title: Dịch vụ nội bộ TLC
+wave: W6
+summary: Quản lý yêu cầu dịch vụ nội bộ có SLA ngày làm việc, đặt phòng họp chống trùng lịch với xuất iCalendar (không giả lập Outlook sync), mượn và trả sách thư viện có hàng chờ, văn thư đi/đến có mã vận đơn, suất ăn tự hủy khi có lịch nghỉ hoặc công tác đã duyệt.
+stories:
+  - id: ST-SVC-01
+    role: worker
+    title: Tự động hủy suất ăn khi có nghỉ phép hoặc công tác đã duyệt
+    story: Là nhân viên, khi đơn nghỉ phép hoặc công tác của tôi được duyệt, các suất ăn đã đăng ký trong khoảng thời gian đó phải tự động hủy và ghi nhận lý do, không thể đăng ký lại trong ngày nghỉ.
+    ac:
+      - given: nhân viên đã đăng ký suất ăn ngày T
+        when: đơn nghỉ phép hoặc công tác bao trùm ngày T được duyệt
+        then: suất ăn chuyển sang trạng thái Hủy (Cancelled) với lý do tự hủy và nguồn chứng từ
+      - given: ngày T đang có lịch nghỉ hoặc công tác đã duyệt
+        when: nhân viên cố gắng tạo mới suất ăn ngày T
+        then: bị chặn với lỗi ngày nghỉ/công tác đã duyệt không được đăng ký ăn
+    brd: [HR-DV-13, HR-CT-14]
+    blueprint_uat: [UAT-SVC-02]
+    cases: [SVC-01, SVC-02]
+  - id: ST-SVC-02
+    role: employee
+    title: Đặt phòng họp và chống trùng lịch
+    story: Là người dùng, tôi muốn đặt phòng họp với thời gian bắt đầu và kết thúc; hệ thống chặn trùng lịch khi có người khác đặt cùng phòng và cùng khung giờ, và hỗ trợ xuất tệp iCalendar.
+    ac:
+      - given: phòng họp A đã có lịch đặt từ 09:00 đến 10:00
+        when: người dùng khác đặt phòng A từ 09:30 đến 10:30
+        then: bị chặn với thông báo phòng đã được đặt trong khoảng thời gian này
+      - given: đặt phòng thành công
+        when: bấm nút Xuất iCalendar
+        then: tải về tệp .ics định dạng VCALENDAR chuẩn (không giả lập đồng bộ Outlook hai chiều)
+    brd: [HR-DV-15]
+    blueprint_uat: [UAT-SVC-01]
+    cases: [SVC-03, SVC-04]
+  - id: ST-SVC-03
+    role: employee
+    title: Mượn và trả sách thư viện có hàng chờ tự động
+    story: Là nhân viên, tôi muốn gửi yêu cầu mượn sách; nếu sách đang được mượn, yêu cầu tự chuyển sang hàng chờ (Waitlisted). Khi HR nhận lại sách, người đầu tiên trong hàng chờ được thông báo.
+    ac:
+      - given: sách B đang ở trạng thái đã cho mượn (Lent)
+        when: nhân viên khác gửi yêu cầu mượn sách B
+        then: yêu cầu tự động chuyển thành Waitlisted
+      - given: sách B được người mượn trả lại cho HR
+        when: HR chuyển trạng thái sang Đã nhận lại (Returned)
+        then: hệ thống thông báo cho người tiếp theo trong hàng chờ
+    brd: [HR-DV-16]
+    blueprint_uat: []
+    cases: [SVC-05, SVC-06]
+  - id: ST-SVC-04
+    role: employee
+    title: Yêu cầu dịch vụ nội bộ có SLA ngày làm việc và đánh giá khi đóng
+    story: Là nhân viên, tôi gửi yêu cầu dịch vụ theo danh mục; hệ thống tính hạn SLA theo ngày làm việc (bỏ qua ngày nghỉ). Người gửi xác nhận mức hài lòng khi đóng yêu cầu.
+    ac:
+      - given: danh mục dịch vụ có SLA 2 ngày làm việc
+        when: nhân viên tạo yêu cầu dịch vụ
+        then: hạn hoàn thành SLA tự động tính bỏ qua ngày nghỉ và ngày lễ
+      - given: yêu cầu chuyển sang Đã giải quyết (Resolved)
+        when: nhân viên đóng yêu cầu và chấm điểm hài lòng
+        then: yêu cầu chuyển sang Closed với điểm đánh giá
+    brd: [HR-DV-09, HR-DV-10]
+    blueprint_uat: []
+    cases: [SVC-07, SVC-08]
+  - id: ST-SVC-05
+    role: hr
+    title: Quản lý văn thư gửi đi và nhận đến
+    story: Là nhân sự/hành chính, tôi quản lý văn thư đi và đến qua các trạng thái chuẩn, cập nhật đơn vị vận chuyển và mã vận đơn tracking.
+    ac:
+      - given: văn thư gửi đi ở trạng thái Need Dispatch
+        when: HR nhập đơn vị vận chuyển và mã vận đơn rồi chuyển Với đơn vị vận chuyển (With Courier)
+        then: trạng thái cập nhật thành công và lưu mã vận đơn
+      - given: văn thư nhận đến ở trạng thái New Incoming
+        when: HR bàn giao cho người nhận
+        then: trạng thái chuyển thành Handed Over
+    brd: [HR-DV-20, HR-DV-21]
+    blueprint_uat: []
+    cases: [SVC-09, SVC-10]

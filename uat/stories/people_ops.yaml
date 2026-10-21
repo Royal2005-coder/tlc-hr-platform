@@ -1,0 +1,169 @@
+version: 1
+module: people_ops
+blueprint: W5
+stories:
+- id: W5-ASSET-RECEIPT-HAPPY
+  role: Employee
+  brd:
+  - HR-TS-01
+  - HR-TS-05
+  uat: &id001
+  - UAT-AST-01
+  given: A draft Asset Movement exists issuing a laptop to An with HR condition and
+    evidence attached.
+  when: An views the Asset Movement on standard Desk and clicks Xác nhận bàn giao.
+  then: The employee acknowledgment timestamp is recorded on the movement.
+  title: The employee acknowledgment timestamp is recorded on the movement.
+  story: 'Employee: An views the Asset Movement on standard Desk and clicks Xác nhận
+    bàn giao. → The employee acknowledgment timestamp is recorded on the movement.'
+  cases:
+  - W5-ASSET-RECEIPT-HAPPY
+  ac:
+  - given: A draft Asset Movement exists issuing a laptop to An with HR condition
+      and evidence attached.
+    when: An views the Asset Movement on standard Desk and clicks Xác nhận bàn giao.
+    then: The employee acknowledgment timestamp is recorded on the movement.
+    cases:
+    - W5-ASSET-RECEIPT-HAPPY
+  blueprint_uat: *id001
+- id: W5-ASSET-RECEIPT-STAFF
+  role: TLC HR Lead
+  brd:
+  - HR-TS-05
+  - HR-TS-06
+  uat: &id002
+  - UAT-AST-01
+  given: An employee has acknowledged receipt on a draft Asset Movement.
+  when: Hoa clicks Xác nhận bàn giao as handover staff.
+  then: Both handover parties are confirmed and the movement is ready for submission.
+  title: Both handover parties are confirmed and the movement is ready for submission.
+  story: 'TLC HR Lead: Hoa clicks Xác nhận bàn giao as handover staff. → Both handover
+    parties are confirmed and the movement is ready for submission.'
+  cases:
+  - W5-ASSET-RECEIPT-STAFF
+  ac:
+  - given: An employee has acknowledged receipt on a draft Asset Movement.
+    when: Hoa clicks Xác nhận bàn giao as handover staff.
+    then: Both handover parties are confirmed and the movement is ready for submission.
+    cases:
+    - W5-ASSET-RECEIPT-STAFF
+  blueprint_uat: *id002
+- id: W5-ASSET-SUBMIT-BLOCKED
+  role: TLC HR Lead
+  brd:
+  - HR-TS-05
+  - HR-TS-07
+  uat: &id003
+  - UAT-AST-01
+  given: An Asset Movement lacks either dual receipt confirmation or condition evidence.
+  when: Hoa attempts to submit the Asset Movement.
+  then: Server validation blocks submission requiring full dual acknowledgment.
+  title: Server validation blocks submission requiring full dual acknowledgment.
+  story: 'TLC HR Lead: Hoa attempts to submit the Asset Movement. → Server validation
+    blocks submission requiring full dual acknowledgment.'
+  cases:
+  - W5-ASSET-SUBMIT-BLOCKED
+  ac:
+  - given: An Asset Movement lacks either dual receipt confirmation or condition evidence.
+    when: Hoa attempts to submit the Asset Movement.
+    then: Server validation blocks submission requiring full dual acknowledgment.
+    cases:
+    - W5-ASSET-SUBMIT-BLOCKED
+  blueprint_uat: *id003
+- id: W5-LICENSE-CLEARANCE-BLOCKER
+  role: TLC HR Lead
+  brd:
+  - HR-TS-03
+  - HR-NV-07
+  - HR-NV-10
+  uat: &id004
+  - UAT-EXIT-01
+  given: An has active custody of an asset and an active Google Workspace account
+    grant.
+  when: clearance_blockers is invoked during exit clearance check.
+  then: Both unreturned asset custody and active account grant are returned as blockers.
+  title: Both unreturned asset custody and active account grant are returned as blockers.
+  story: 'TLC HR Lead: clearance_blockers is invoked during exit clearance check.
+    → Both unreturned asset custody and active account grant are returned as blockers.'
+  cases:
+  - W5-LICENSE-CLEARANCE-BLOCKER
+  ac:
+  - given: An has active custody of an asset and an active Google Workspace account
+      grant.
+    when: clearance_blockers is invoked during exit clearance check.
+    then: Both unreturned asset custody and active account grant are returned as blockers.
+    cases:
+    - W5-LICENSE-CLEARANCE-BLOCKER
+  blueprint_uat: *id004
+- id: W5-POLICY-ACK-HAPPY
+  role: Employee
+  brd:
+  - HR-TT-01
+  uat: &id005
+  - UAT-GOV-01
+  given: A published Policy Version exists with a pending Acknowledgment for An.
+  when: An opens the Acknowledgment form on Desk and clicks Tôi đã đọc đúng phiên
+    bản.
+  then: The acknowledgment timestamp and user are recorded and linked ToDo closes.
+  title: The acknowledgment timestamp and user are recorded and linked ToDo closes.
+  story: 'Employee: An opens the Acknowledgment form on Desk and clicks Tôi đã đọc
+    đúng phiên bản. → The acknowledgment timestamp and user are recorded and linked
+    ToDo closes.'
+  cases:
+  - W5-POLICY-ACK-HAPPY
+  ac:
+  - given: A published Policy Version exists with a pending Acknowledgment for An.
+    when: An opens the Acknowledgment form on Desk and clicks Tôi đã đọc đúng phiên
+      bản.
+    then: The acknowledgment timestamp and user are recorded and linked ToDo closes.
+    cases:
+    - W5-POLICY-ACK-HAPPY
+  blueprint_uat: *id005
+- id: W5-GRIEVANCE-SUBMIT
+  role: Employee
+  brd:
+  - HR-TT-03
+  uat: &id006
+  - UAT-CMP-01
+  given: An wants to submit a workplace facility feedback.
+  when: An creates a native Employee Grievance with details.
+  then: The grievance is created in Open status and is scoped only to An and HR.
+  title: The grievance is created in Open status and is scoped only to An and HR.
+  story: 'Employee: An creates a native Employee Grievance with details. → The grievance
+    is created in Open status and is scoped only to An and HR.'
+  cases:
+  - W5-GRIEVANCE-SUBMIT
+  ac:
+  - given: An wants to submit a workplace facility feedback.
+    when: An creates a native Employee Grievance with details.
+    then: The grievance is created in Open status and is scoped only to An and HR.
+    cases:
+    - W5-GRIEVANCE-SUBMIT
+  blueprint_uat: *id006
+- id: W5-DISCIPLINE-WORKFLOW
+  role: TLC Line Manager
+  brd:
+  - HR-TT-02
+  uat: &id007
+  - UAT-CMP-01
+  given: Quang observes repeated unexcused attendance infractions by a subordinate.
+  when: Quang creates a TLC People Ops Discipline record in Proposal status.
+  then: Proposal is submitted for HR review; other employees cannot view the restricted
+    record.
+  title: Proposal is submitted for HR review; other employees cannot view the restricted
+    record.
+  story: 'TLC Line Manager: Quang creates a TLC People Ops Discipline record in Proposal
+    status. → Proposal is submitted for HR review; other employees cannot view the
+    restricted record.'
+  cases:
+  - W5-DISCIPLINE-WORKFLOW
+  ac:
+  - given: Quang observes repeated unexcused attendance infractions by a subordinate.
+    when: Quang creates a TLC People Ops Discipline record in Proposal status.
+    then: Proposal is submitted for HR review; other employees cannot view the restricted
+      record.
+    cases:
+    - W5-DISCIPLINE-WORKFLOW
+  blueprint_uat: *id007
+title: Vận hành nhân sự
+summary: Tài sản, tài khoản IT, đào tạo, phúc lợi, kỷ luật, mục tiêu và đánh giá.

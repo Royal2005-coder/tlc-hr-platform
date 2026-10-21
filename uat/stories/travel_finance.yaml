@@ -1,0 +1,101 @@
+module: travel_finance
+title: Công tác – Tạm ứng – Quyết toán chi phí
+wave: W3
+summary: Đề xuất công tác kiểm tra trùng lịch và tự ghi công On Duty khi Giám đốc duyệt; tạm ứng chi qua ủy nhiệm chi kế toán; quyết toán đối chiếu đúng 3 nhánh (bằng nhau, hoàn tiền thừa, chi bù); tạm ứng quá hạn cần chính sách và chữ ký nhân viên mới được khấu trừ lương; báo cáo công tác kỳ đã khóa sinh điều chỉnh sau chốt không sửa bảng công cũ.
+stories:
+  - id: ST-TRV-01
+    role: office
+    title: Đề xuất công tác kiểm tra trùng lịch và tự ghi công On Duty
+    story: Là nhân viên, tôi muốn gửi đề xuất công tác có kiểm tra trùng lịch nghỉ/tăng ca, khi Giám đốc duyệt hệ thống tự ghi công On Duty và sinh đề xuất tạm ứng theo PO 4.6.
+    ac:
+      - given: nhân viên đã có lịch nghỉ phép đã duyệt
+        when: tạo đề xuất công tác trùng ngày
+        then: hệ thống chặn và báo trùng lịch
+      - given: công tác có phí
+        when: nhập dự toán và số tiền đề nghị tạm ứng
+        then: hệ thống kiểm tra dự toán hợp lệ và tính tổng dự toán
+      - given: Quản lý trực tiếp duyệt
+        when: chuyển cấp Giám đốc
+        then: Giám đốc duyệt thì trạng thái Đã duyệt, hệ thống tự ghi công On Duty các ngày công tác và sinh bản ghi đề xuất tạm ứng
+      - given: người tạo là Quản lý hoặc báo cáo thẳng Giám đốc
+        when: nộp đề xuất
+        then: bỏ cấp Quản lý, chuyển thẳng Giám đốc
+    brd: [HR-CT-01, HR-CT-02, HR-CT-03, HR-CT-04, HR-CT-09, HR-CHG-16]
+    blueprint_uat: [UAT-TRV-01, UAT-ORG-02]
+    cases: [TRV-01, TRV-02, TRV-03, TRV-04, TRV-05]
+  - id: ST-FIN-01
+    role: support
+    title: Tạm ứng và xác nhận chi bằng chứng từ ngân hàng
+    story: Là kế toán, tôi muốn kiểm tra hồ sơ tạm ứng và xác nhận đã chi bằng ủy nhiệm chi ngân hàng thực tế, việc duyệt về chủ trương không tự động ghi nhận đã chi.
+    ac:
+      - given: đề xuất tạm ứng đã được Giám đốc duyệt
+        when: chưa ghi sổ Payment Entry và chưa đính kèm ủy nhiệm chi
+        then: trạng thái vẫn là Chờ chi, không tự động chuyển Đã chi
+      - when: Kế toán kiểm tra hồ sơ, ghi sổ Payment Entry kèm số chứng từ và file ủy nhiệm chi
+        then: tạm ứng chuyển trạng thái Đã chi, số tiền đã ứng được cập nhật vào sổ theo dõi
+    brd: [HR-TU-03, HR-TU-04, HR-TU-06, HR-TU-07, HR-CHG-18]
+    blueprint_uat: [UAT-FIN-01]
+    cases: [FIN-01, FIN-02]
+  - id: ST-FIN-02
+    role: office
+    title: Quyết toán chi phí theo 3 nhánh đối chiếu
+    story: Là nhân viên và kế toán, tôi muốn quyết toán chi phí tự tính chênh lệch thực chi so với tạm ứng và đi đúng 3 nhánh đối chiếu kế toán.
+    ac:
+      - given: nhân viên đã chi tiêu xong
+        when: lập báo cáo quyết toán đính kèm hóa đơn từng dòng
+        then: hệ thống tự tính chênh lệch = đã ứng trừ thực chi, nhân viên không tự cộng trừ
+      - when: Quản lý và Giám đốc duyệt báo cáo quyết toán tuần tự
+        then: hồ sơ chuyển sang Kế toán đối chiếu chứng từ
+      - given: nhánh hoàn tiền thừa (đã ứng > thực chi)
+        when: nhân viên chuyển khoản hoàn ứng và Kế toán đối chiếu Payment Entry nhận tiền
+        then: quyết toán Hoàn tất, sổ tạm ứng hết treo
+      - given: nhánh chi bù (đã ứng < thực chi)
+        when: Kế toán chi bù qua Payment Entry và nhân viên xác nhận đã nhận đủ
+        then: quyết toán Hoàn tất
+    brd: [HR-TU-08, HR-TU-09, HR-TU-10, HR-TU-14, HR-CT-06]
+    blueprint_uat: [UAT-FIN-02]
+    cases: [FIN-03, FIN-04, FIN-05, FIN-06]
+  - id: ST-FIN-03
+    role: hr
+    title: Tạm ứng quá hạn và điều kiện khấu trừ lương
+    story: Là HR và kế toán, tôi muốn tạm ứng quá hạn chỉ được chuyển sang khấu trừ lương khi có chính sách công ty và thỏa thuận đồng ý có chữ ký của nhân viên.
+    ac:
+      - given: tạm ứng quá hạn chưa quyết toán
+        when: chưa có chính sách công ty hoặc chưa có chữ ký xác nhận đồng ý của nhân viên
+        then: hệ thống chặn không cho tạo khoản khấu trừ lương Additional Salary
+      - when: nhân viên nộp đề xuất tạm ứng mới trong khi còn tạm ứng quá hạn
+        then: hệ thống cảnh báo khoản tạm ứng còn treo
+    brd: [HR-TU-11, HR-TU-12, HR-TU-13]
+    blueprint_uat: [UAT-FIN-03]
+    cases: [FIN-07, FIN-08]
+  - id: ST-TRV-02
+    role: office
+    title: Báo cáo công tác và điều chỉnh công kỳ đã khóa
+    story: Là nhân viên và HR, tôi muốn báo cáo công tác thực tế; khi ngày công tác thay đổi rơi vào kỳ công đã khóa, hệ thống tạo điều chỉnh sau chốt chứ không sửa trực tiếp bảng công cũ.
+    ac:
+      - given: chuyến công tác đã kết thúc
+        when: nhân viên nộp báo cáo kết quả và ngày/buổi thực tế
+        then: Quản lý và Giám đốc duyệt báo cáo
+      - given: ngày công tác thực tế thay đổi thuộc kỳ công đã khóa
+        when: Giám đốc duyệt báo cáo
+        then: hệ thống tạo yêu cầu Điều chỉnh sau chốt (giải trình công) cho kỳ sau, dữ liệu công của kỳ đã khóa giữ nguyên
+      - given: kỳ công tháng đang đối soát
+        when: còn chuyến công tác trong kỳ chưa hoàn tất báo cáo
+        then: danh sách việc tồn của kỳ công hiển thị chuyến công tác chưa duyệt báo cáo
+    brd: [HR-CT-05, HR-CT-06, HR-CT-10, HR-CT-11]
+    blueprint_uat: [UAT-TRV-02]
+    cases: [TRV-06, TRV-07, TRV-08]
+  - id: ST-GOV-02
+    role: factory_head
+    title: Phân quyền theo phạm vi và không tự duyệt
+    story: Là người dùng hệ thống, tôi muốn phân quyền duyệt công tác và tài chính đúng theo phạm vi tổ chức và không ai được tự duyệt yêu cầu của mình.
+    ac:
+      - given: trưởng nhà máy
+        when: mở danh sách yêu cầu của nhà máy khác
+        then: không thấy hoặc bị chặn quyền duyệt
+      - given: người tạo yêu cầu
+        when: thao tác duyệt hoặc xác nhận chi trên yêu cầu của chính mình
+        then: hệ thống báo lỗi không được tự duyệt
+    brd: [HR-CHG-05, HR-CHG-16]
+    blueprint_uat: [UAT-ORG-01, UAT-ORG-03]
+    cases: [GOV-01, GOV-02]

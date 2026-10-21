@@ -1,0 +1,313 @@
+version: 1
+module: lifecycle
+blueprint: W4
+stories:
+- id: W4-CORE-HAPPY
+  role: TLC HR Officer
+  brd:
+  - HR-HS-07
+  - HR-HS-17
+  uat: &id001
+  - UAT-HR-HS-07
+  - UAT-HR-HS-17
+  given: Dedicated seed created a draft contract with unique number and private demo
+    evidence.
+  when: Lan opens its standard Desk form and sends it for HR review.
+  then: The same document enters HR review with dates and evidence retained.
+  title: The same document enters HR review with dates and evidence retained.
+  story: 'TLC HR Officer: Lan opens its standard Desk form and sends it for HR review.
+    → The same document enters HR review with dates and evidence retained.'
+  cases:
+  - W4-CORE-HAPPY
+  ac:
+  - given: Dedicated seed created a draft contract with unique number and private
+      demo evidence.
+    when: Lan opens its standard Desk form and sends it for HR review.
+    then: The same document enters HR review with dates and evidence retained.
+    cases:
+    - W4-CORE-HAPPY
+  blueprint_uat: *id001
+- id: W4-CORE-APPROVE
+  role: TLC HR Lead
+  brd:
+  - HR-HS-07
+  - HR-HS-18
+  uat: &id002
+  - UAT-HR-HS-07
+  - UAT-HR-HS-18
+  given: A complete contract is awaiting HR review.
+  when: Hoa chooses Duyệt from the native workflow menu.
+  then: The contract is submitted and its approved fields cannot be edited directly.
+  title: The contract is submitted and its approved fields cannot be edited directly.
+  story: 'TLC HR Lead: Hoa chooses Duyệt from the native workflow menu. → The contract
+    is submitted and its approved fields cannot be edited directly.'
+  cases:
+  - W4-CORE-APPROVE
+  ac:
+  - given: A complete contract is awaiting HR review.
+    when: Hoa chooses Duyệt from the native workflow menu.
+    then: The contract is submitted and its approved fields cannot be edited directly.
+    cases:
+    - W4-CORE-APPROVE
+  blueprint_uat: *id002
+- id: W4-CORE-ERROR
+  role: TLC HR Officer
+  brd:
+  - HR-HS-07
+  - HR-HS-17
+  uat: &id003
+  - UAT-HR-HS-07
+  - UAT-HR-HS-17
+  given: A new native TLC contract form has no evidence.
+  when: Lan saves it.
+  then: Native mandatory-field validation prevents insertion.
+  title: Native mandatory-field validation prevents insertion.
+  story: 'TLC HR Officer: Lan saves it. → Native mandatory-field validation prevents
+    insertion.'
+  cases:
+  - W4-CORE-ERROR
+  ac:
+  - given: A new native TLC contract form has no evidence.
+    when: Lan saves it.
+    then: Native mandatory-field validation prevents insertion.
+    cases:
+    - W4-CORE-ERROR
+  blueprint_uat: *id003
+- id: W4-CORE-PERMISSION
+  role: Employee
+  brd:
+  - HR-HS-07
+  - HR-HS-17
+  uat: &id004
+  - UAT-HR-HS-07
+  - UAT-HR-HS-17
+  given: An approved contract belongs to An.
+  when: Binh navigates directly to that Desk record URL.
+  then: The server denies reading its contract data and evidence.
+  title: The server denies reading its contract data and evidence.
+  story: 'Employee: Binh navigates directly to that Desk record URL. → The server
+    denies reading its contract data and evidence.'
+  cases:
+  - W4-CORE-PERMISSION
+  ac:
+  - given: An approved contract belongs to An.
+    when: Binh navigates directly to that Desk record URL.
+    then: The server denies reading its contract data and evidence.
+    cases:
+    - W4-CORE-PERMISSION
+  blueprint_uat: *id004
+- id: W4-EXIT-HAPPY
+  role: TLC HR Officer
+  brd:
+  - HR-NV-01
+  - HR-NV-02
+  - HR-NV-08
+  uat: &id005
+  - UAT-HR-NV-01
+  - UAT-HR-NV-02
+  - UAT-HR-NV-08
+  given: Dedicated seed created a draft separation for an indefinite contract.
+  when: Lan opens its standard Desk form.
+  then: The earliest compliant last day (45 calendar days) and 14-working-day settlement
+    due date appear automatically.
+  title: The earliest compliant last day (45 calendar days) and 14-working-day settlement
+    due date appear automatically.
+  story: 'TLC HR Officer: Lan opens its standard Desk form. → The earliest compliant
+    last day (45 calendar days) and 14-working-day settlement due date appear automatically.'
+  cases:
+  - W4-EXIT-HAPPY
+  ac:
+  - given: Dedicated seed created a draft separation for an indefinite contract.
+    when: Lan opens its standard Desk form.
+    then: The earliest compliant last day (45 calendar days) and 14-working-day settlement
+      due date appear automatically.
+    cases:
+    - W4-EXIT-HAPPY
+  blueprint_uat: *id005
+- id: W4-EXIT-ERROR
+  role: TLC HR Officer
+  brd:
+  - HR-NV-02
+  uat: &id006
+  - UAT-HR-NV-02
+  given: A separation record selects a statutory exception without legal evidence
+    or reviewer attestation.
+  when: Lan saves the record.
+  then: Server validation blocks save with EXIT-LEGAL.
+  title: Server validation blocks save with EXIT-LEGAL.
+  story: 'TLC HR Officer: Lan saves the record. → Server validation blocks save with
+    EXIT-LEGAL.'
+  cases:
+  - W4-EXIT-ERROR
+  ac:
+  - given: A separation record selects a statutory exception without legal evidence
+      or reviewer attestation.
+    when: Lan saves the record.
+    then: Server validation blocks save with EXIT-LEGAL.
+    cases:
+    - W4-EXIT-ERROR
+  blueprint_uat: *id006
+- id: W4-EXIT-PERMISSION
+  role: Employee
+  brd:
+  - HR-NV-01
+  uat: &id007
+  - UAT-HR-NV-01
+  given: An employee separation record exists.
+  when: Binh navigates directly to that separation record URL.
+  then: The server denies reading the separation record.
+  title: The server denies reading the separation record.
+  story: 'Employee: Binh navigates directly to that separation record URL. → The server
+    denies reading the separation record.'
+  cases:
+  - W4-EXIT-PERMISSION
+  ac:
+  - given: An employee separation record exists.
+    when: Binh navigates directly to that separation record URL.
+    then: The server denies reading the separation record.
+    cases:
+    - W4-EXIT-PERMISSION
+  blueprint_uat: *id007
+- id: W4-OB-HAPPY
+  role: TLC HR Officer
+  brd:
+  - HR-OB-01
+  uat: &id008
+  - UAT-HR-OB-01
+  given: Recruitment journey executed, creating a native onboarding draft from an
+    accepted offer.
+  when: Lan opens the draft Employee Onboarding from Desk.
+  then: Standard Desk form displays linked offer, candidate and joining date.
+  title: Standard Desk form displays linked offer, candidate and joining date.
+  story: 'TLC HR Officer: Lan opens the draft Employee Onboarding from Desk. → Standard
+    Desk form displays linked offer, candidate and joining date.'
+  cases:
+  - W4-OB-HAPPY
+  ac:
+  - given: Recruitment journey executed, creating a native onboarding draft from an
+      accepted offer.
+    when: Lan opens the draft Employee Onboarding from Desk.
+    then: Standard Desk form displays linked offer, candidate and joining date.
+    cases:
+    - W4-OB-HAPPY
+  blueprint_uat: *id008
+- id: W4-OB-ERROR
+  role: TLC HR Officer
+  brd:
+  - HR-OB-06
+  - HR-OB-14
+  uat: &id009
+  - UAT-HR-OB-06
+  - UAT-HR-OB-14
+  given: An onboarding record has an evidence row marked Received without an attached
+    file.
+  when: Lan saves the record.
+  then: Server validation blocks save with LC-EVIDENCE.
+  title: Server validation blocks save with LC-EVIDENCE.
+  story: 'TLC HR Officer: Lan saves the record. → Server validation blocks save with
+    LC-EVIDENCE.'
+  cases:
+  - W4-OB-ERROR
+  ac:
+  - given: An onboarding record has an evidence row marked Received without an attached
+      file.
+    when: Lan saves the record.
+    then: Server validation blocks save with LC-EVIDENCE.
+    cases:
+    - W4-OB-ERROR
+  blueprint_uat: *id009
+- id: W4-OB-PERMISSION
+  role: Employee
+  brd:
+  - HR-OB-01
+  uat: &id010
+  - UAT-HR-OB-01
+  given: An employee onboarding record exists.
+  when: Binh navigates directly to that record URL.
+  then: The server denies reading the onboarding record.
+  title: The server denies reading the onboarding record.
+  story: 'Employee: Binh navigates directly to that record URL. → The server denies
+    reading the onboarding record.'
+  cases:
+  - W4-OB-PERMISSION
+  ac:
+  - given: An employee onboarding record exists.
+    when: Binh navigates directly to that record URL.
+    then: The server denies reading the onboarding record.
+    cases:
+    - W4-OB-PERMISSION
+  blueprint_uat: *id010
+- id: W4-OB-BOUNDARY
+  role: TLC HR Lead
+  brd:
+  - HR-OB-12
+  - HR-OB-14
+  uat: &id011
+  - UAT-HR-OB-12
+  - UAT-HR-OB-14
+  automated_evidence: tests/unit/test_lifecycle.py
+  given: The employee calendar includes real holidays and factory working weekends.
+  when: A probation reaches 180/60/30 calendar days or six actual working days, or
+    repeats the same job.
+  then: Exact legal limits pass; the next day and repeated probation are rejected.
+    Completion requires evidence confirmations.
+  title: Exact legal limits pass; the next day and repeated probation are rejected.
+    Completion requires evidence confirmations.
+  story: 'TLC HR Lead: A probation reaches 180/60/30 calendar days or six actual working
+    days, or repeats the same job. → Exact legal limits pass; the next day and repeated
+    probation are rejected. Completion requires evidence confirmations.'
+  cases:
+  - W4-OB-BOUNDARY
+  ac:
+  - given: The employee calendar includes real holidays and factory working weekends.
+    when: A probation reaches 180/60/30 calendar days or six actual working days,
+      or repeats the same job.
+    then: Exact legal limits pass; the next day and repeated probation are rejected.
+      Completion requires evidence confirmations.
+    cases:
+    - W4-OB-BOUNDARY
+  blueprint_uat: *id011
+- id: W4-EXIT-BOUNDARY
+  role: TLC HR Lead
+  brd:
+  - HR-NV-02
+  - HR-NV-08
+  - HR-NV-10
+  - HR-NV-12
+  uat: &id012
+  - UAT-HR-NV-02
+  - UAT-HR-NV-08
+  - UAT-HR-NV-10
+  - UAT-HR-NV-12
+  automated_evidence: tests/unit/test_lifecycle.py
+  given: Contract category and employee calendar are supplied; exceptional legal facts
+    need HR evidence and attestation.
+  when: Notice or settlement dates are calculated, or a completion has outstanding
+    resources.
+  then: Notice uses 45/30 calendar or three working days, settlement uses 14 working
+    or evidenced 30 calendar days, and completion rejects every outstanding item.
+  title: Notice uses 45/30 calendar or three working days, settlement uses 14 working
+    or evidenced 30 calendar days, and completi
+  story: 'TLC HR Lead: Notice or settlement dates are calculated, or a completion
+    has outstanding resources. → Notice uses 45/30 calendar or three working days,
+    settlement uses 14 working or evidenced 30 calendar days, and completion rejects
+    every outstanding item.'
+  cases:
+  - W4-EXIT-BOUNDARY
+  ac:
+  - given: Contract category and employee calendar are supplied; exceptional legal
+      facts need HR evidence and attestation.
+    when: Notice or settlement dates are calculated, or a completion has outstanding
+      resources.
+    then: Notice uses 45/30 calendar or three working days, settlement uses 14 working
+      or evidenced 30 calendar days, and completion rejects every outstanding item.
+    cases:
+    - W4-EXIT-BOUNDARY
+  blueprint_uat: *id012
+coverage_notes:
+- Boundary stories are pure domain cases, not claims of recorded browser execution.
+- Recorded browser stories cover native Desk forms, workflows, validations and permissions
+  for contracts, separations and onboardings.
+- Recruitment and organization have separate stories and journeys.
+title: Vòng đời nhân viên
+summary: Hợp đồng, người phụ thuộc, thử việc, điều chuyển và nghỉ việc trên Desk chuẩn.

@@ -1,0 +1,69 @@
+module: recruitment
+title: Tuyển dụng trên Native Desk
+wave: W4
+summary: Đề nghị qua HR và CEO sinh vacancy; ứng viên chuẩn hóa giữ nhiều hồ sơ ứng tuyển; offer chỉ sau vòng cuối, HR và CEO duyệt, lương khóa và nhận offer mở onboarding.
+stories:
+  - id: ST-TD-01
+    role: manager
+    title: Đề nghị tuyển dụng có JD và ngày cần người
+    story: Quản lý tạo đề nghị một hoặc nhiều vị trí; HR kiểm tra, CEO duyệt và hệ thống tạo một Job Opening cho mỗi dòng vị trí.
+    ac:
+      - given: đề nghị thiếu JD hoặc ngày cần người
+        when: Submit Recruitment
+        then: bị chặn trước khi gửi HR
+      - given: HR đã Review Recruitment
+        when: CEO Approve Recruitment
+        then: mỗi dòng vị trí sinh một vacancy và lưu khóa chống tạo lại
+    brd: [HR-TD-01, HR-TD-02, HR-TD-03]
+    blueprint_uat: []
+    cases: []
+  - id: ST-TD-02
+    role: hr
+    title: Một ứng viên có nhiều hồ sơ ứng tuyển
+    story: HR giữ từng Job Applicant độc lập, còn email hoặc điện thoại hoặc CCCD trùng được nối về cùng hồ sơ ứng viên chuẩn.
+    ac:
+      - given: hai hồ sơ có email khác và số điện thoại 0/84 tương đương
+        when: mở hai Job Applicant trên Desk
+        then: tên hồ sơ khác nhau nhưng Canonical Candidate giống nhau
+    brd: [HR-TD-08, HR-TD-09]
+    blueprint_uat: []
+    cases: [TD-01]
+  - id: ST-TD-03
+    role: hr
+    title: Chỉ offer sau vòng cuối
+    story: HR chỉ tạo offer khi một Interview của chính hồ sơ ứng tuyển có loại vòng cuối, Cleared và đã nộp.
+    ac:
+      - given: ứng viên chuẩn giống nhau nhưng hồ sơ thứ hai chưa qua vòng cuối
+        when: lưu offer cho hồ sơ thứ hai
+        then: bị chặn; kết quả của hồ sơ thứ nhất không được dùng thay
+      - given: hồ sơ có vòng cuối Cleared đã nộp
+        when: lưu offer và Submit Offer
+        then: chuyển HR Review
+    brd: [HR-TD-25]
+    blueprint_uat: []
+    cases: [TD-02, TD-03]
+  - id: ST-TD-04
+    role: ceo
+    title: Offer qua HR rồi CEO và khóa lương
+    story: HR Lead kiểm tra offer; CEO phê duyệt nộp chứng từ; lương và điều khoản không được sửa sau duyệt.
+    ac:
+      - given: HR Review
+        when: HR Lead Review Offer rồi CEO Approve Offer
+        then: offer được nộp và lương không còn cho sửa
+      - given: offer chưa nhận cần thay đổi lương
+        when: HR Lead Cancel For Amendment và Amend
+        then: tạo phiên bản mới phải qua HR và CEO lại; phiên bản cũ vẫn giữ lịch sử
+    brd: [HR-TD-26]
+    blueprint_uat: []
+    cases: [TD-04, TD-05, TD-06]
+  - id: ST-TD-05
+    role: hr
+    title: Nhận offer cập nhật vacancy và mở onboarding
+    story: HR ghi nhận đã gửi rồi Accepted trên Job Offer gốc; hệ thống tính số đã tuyển và tạo Employee Onboarding native một lần.
+    ac:
+      - given: vacancy cần 2 người và chưa tuyển ai
+        when: offer đã duyệt chuyển Sent rồi Status Accepted
+        then: số còn thiếu là 1; có Employee Onboarding liên kết đúng offer, applicant và ngày nhận việc
+    brd: [HR-TD-28, HR-TD-30]
+    blueprint_uat: []
+    cases: [TD-07]

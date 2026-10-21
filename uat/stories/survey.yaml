@@ -1,0 +1,47 @@
+module: survey
+title: Khảo sát ẩn danh TLC
+wave: W6
+summary: Khảo sát nội bộ ẩn danh thật, quản lý phiên bản khi cập nhật câu hỏi, bảo vệ quyền riêng tư qua ngưỡng công bố tối thiểu theo bộ phận (>= 5 phản hồi) mà không lưu định danh từng phiếu bầu.
+stories:
+  - id: ST-SUR-01
+    role: hr
+    title: Tạo khảo sát và quản lý phiên bản câu hỏi
+    story: Là HR, tôi tạo khảo sát với các câu hỏi và lựa chọn; khi khảo sát đã phát hành, sửa đổi câu hỏi phải tạo phiên bản mới, phiên bản cũ đóng băng để bảo toàn dữ liệu phản hồi.
+    ac:
+      - given: khảo sát ở trạng thái Draft
+        when: sửa đổi danh sách câu hỏi
+        then: lưu thành công ở phiên bản 1
+      - given: khảo sát đã phát hành (Open)
+        when: bấm nút Tạo phiên bản mới
+        then: hệ thống nhân bản sang khảo sát mới ở trạng thái Draft với số phiên bản tăng lên 1
+    brd: [HR-KS-01, HR-KS-07]
+    blueprint_uat: []
+    cases: [SUR-01, SUR-02]
+  - id: ST-SUR-02
+    role: worker
+    title: Trả lời khảo sát ẩn danh thật không lưu phiếu định danh
+    story: Là nhân viên, tôi tham gia khảo sát ẩn danh; hệ thống chỉ ghi nhận tham gia để tránh gửi trùng, dữ liệu câu trả lời chỉ cộng dồn vào bảng tổng hợp theo bộ phận mà không lưu liên kết với tài khoản.
+    ac:
+      - given: khảo sát đang mở (Open)
+        when: nhân viên nộp câu trả lời ẩn danh
+        then: hệ thống ghi nhận thành công và tăng số lượng tổng hợp trong bộ phận
+      - given: nhân viên đã trả lời phiên bản khảo sát này
+        when: cố gắng gửi lại phản hồi
+        then: bị chặn với thông báo đã gửi phản hồi cho phiên bản này
+    brd: [HR-KS-11, HR-KS-12]
+    blueprint_uat: []
+    cases: [SUR-03, SUR-04]
+  - id: ST-SUR-03
+    role: manager
+    title: Bảo vệ quyền riêng tư qua ngưỡng công bố tối thiểu theo bộ phận
+    story: Là quản lý hoặc HR, tôi xem kết quả khảo sát đã đóng; hệ thống chặn hiển thị chi tiết nếu số phản hồi trong bộ phận dưới ngưỡng tối thiểu (>= 5), tránh suy diễn danh tính cá nhân.
+    ac:
+      - given: khảo sát đã đóng có bộ phận dưới 5 phản hồi
+        when: xem kết quả theo bộ phận đó
+        then: hệ thống báo chưa đủ ngưỡng công bố và ẩn toàn bộ phân bố câu trả lời
+      - given: bộ phận có từ 5 phản hồi trở lên
+        when: xem kết quả theo bộ phận
+        then: hệ thống hiển thị phân bố câu trả lời và số lượng phản hồi
+    brd: [HR-KS-12, HR-KS-13, HR-KS-20]
+    blueprint_uat: [UAT-SUR-01]
+    cases: [SUR-05, SUR-06]
