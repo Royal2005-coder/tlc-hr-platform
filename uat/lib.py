@@ -84,6 +84,17 @@ CAPTION_JS = """
 """
 CAPTION_INIT = "window.addEventListener('DOMContentLoaded', () => { (" + CAPTION_JS + ")(); });"
 
+# Counts the operations a real user performs in the page (mouse, keys, form changes). sessionStorage survives the
+# navigations of one tab, so a case that only calls the API keeps the counter where it was.
+# A raw self-running script, not an arrow function: Playwright only calls an init script when it recognises a function
+# body, and an unrecognised one silently never runs.
+OPS_JS = """
+(() => {
+  const bump = () => sessionStorage.setItem('uat-ops', (+sessionStorage.getItem('uat-ops') || 0) + 1);
+  ['click', 'keydown', 'change', 'submit'].forEach((t) => document.addEventListener(t, bump, true));
+})();
+"""
+
 
 class Session:
     def __init__(self, browser, code, account, phone=False, geolocation=None):
@@ -98,6 +109,7 @@ class Session:
                                                "permissions": ["geolocation"]} if geolocation else {}))
         self.context.add_init_script("window.__uatPos = '" + ("top" if phone else "bottom") + "';")
         self.context.add_init_script(CAPTION_INIT)
+        self.context.add_init_script(OPS_JS)
         self.context.set_default_timeout(25000)
         self.page = self.context.new_page()
         self.page.on("dialog", lambda d: d.accept())
@@ -109,6 +121,21 @@ class Session:
             self.page.evaluate(CAPTION_JS, f"{self.code} · {self.account}@demo.example · {text}")
         except Exception:
             pass
+
+    def step(self, text, pause=700):
+        """Say what the user is about to do, so the recording reads as a procedure and not as a flash."""
+        self.caption(text)
+        self.page.wait_for_timeout(pause)
+
+    def ops(self):
+        """How many operations a real user has performed in this session so far (every tab it opened)."""
+        total = 0
+        for page in self.context.pages:
+            try:
+                total += int(page.evaluate("() => +sessionStorage.getItem('uat-ops') || 0"))
+            except Exception:
+                pass
+        return total
 
     def stamp(self):
         seconds = int(time.monotonic() - self.t0)
@@ -124,11 +151,18 @@ class Session:
 
 
 @contextmanager
-def case(s, case_id, function, steps, data, expected):
+def case(s, case_id, function, steps, data, expected, ui=True):
+    """One case of the journey.
+
+    `ui` defaults to True: the demonstrated action has to be performed by clicking and typing, because the recording is
+    the evidence. `ui=False` is only for a case whose subject is the server's answer itself (a denied read, an export);
+    those are listed as such in the deck instead of pretending a person did them.
+    """
     row = {"id": case_id, "account": f"{s.account}@demo.example", "role": s.label, "function": function, "steps": steps,
-           "data": data, "expected": expected, "actual": "", "status": "", "time": s.stamp(), "shot": "",
+           "data": data, "expected": expected, "actual": "", "status": "", "time": s.stamp(), "shot": "", "ui": ui, "ui_ops": 0,
            "run_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "video": f"videos/{s.index:02d}_{s.code}_{s.account}.webm"}
     s.caption(f"{case_id} · {function}")
+    before = s.ops()
     found = {}
     try:
         yield found
@@ -138,7 +172,11 @@ def case(s, case_id, function, steps, data, expected):
         row["actual"] = f"{type(exc).__name__}: {message[0][:300] if message else '(không có thông báo)'}"
         row["status"] = "Không đạt"
         row["trace"] = traceback.format_exc()[-1500:]
-    s.page.wait_for_timeout(700)
+    row["ui_ops"] = s.ops() - before
+    if ui and row["status"] == "Đạt" and row["ui_ops"] == 0:
+        row["status"] = "Không đạt"
+        row["actual"] = "Không có thao tác nào trên giao diện (0 cú nhấp/phím) - ca chỉ được chứng minh bằng API"
+    s.page.wait_for_timeout(1600)  # hold the result screen long enough to be read in the recording
     try:
         path = OUT / "shots" / f"{case_id}.png"
         s.page.screenshot(path=str(path))

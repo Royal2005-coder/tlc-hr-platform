@@ -52,7 +52,13 @@ MODULES = {
                "Phiên bản câu hỏi; phiếu trả lời không lưu danh tính; chỉ công bố kết quả khi bộ phận đủ ngưỡng người trả lời"),
     "role_experience": ("Không gian làm việc theo vai trò", "GOV · ANL", "06-approval.png", "Workspace, Number Card, Dashboard Chart, Role, User Permission",
                         "Mỗi vai trò một workspace: thẻ việc chờ, biểu đồ, lối tắt; trưởng nhà máy chỉ thấy nhà máy mình; CEO thấy gross/net và hàng đợi ký"),
+    "roles": ("Hành trình liền mạch theo vai trò", "GOV", None, "Giao diện gốc của Frappe HR và desk, không màn hình tự làm",
+              "Mỗi vai trò một video quay liền mạch cả ngày làm việc thật: chấm công, xin nghỉ, trả lời tăng ca, công tác – tạm ứng – quyết toán, duyệt đơn, chốt kỳ công, ký lương, khảo sát ẩn danh"),
 }
+# Một vai trò có thể cần nhiều tài khoản (HR = chuyên viên + trưởng phòng + tính lương); roles_stitch.sh nối các clip
+# của R1..R6 thành một video ROLE-*.mp4 cho vai trò đó.
+JOURNEY_CODE = {"worker": "ROLE-CONG_NHAN", "office": "ROLE-NHAN_VIEN_VP", "factory_head": "ROLE-TRUONG_NHA_MAY",
+                "hr": "ROLE-HR", "ceo": "ROLE-CEO", "support": "ROLE-KE_TOAN_QUAN_LY"}
 DOMAINS = [("WF", "Chấm công, nghỉ, tăng ca", "leave · attendance · overtime"), ("PAY", "Lương", "payroll · payroll_compliance"),
            ("FIN", "Tạm ứng, chi phí", "travel_finance"), ("TRV", "Công tác", "travel_finance"), ("CORE", "Hồ sơ nhân sự", "lifecycle"),
            ("ORG", "Tổ chức", "organization"), ("TAL", "Tuyển dụng", "recruitment"), ("OB", "Hội nhập, thử việc", "lifecycle"),
@@ -88,6 +94,9 @@ def load(run_dir):
         for s in m.get("stories", []):
             for c in s.get("cases") or []:
                 module_of.setdefault(c, m["module"])
+    for r in data["results"]:
+        if r["id"].startswith("RV-"):  # the role journeys are not a story module: they belong to the role slides
+            module_of[r["id"]] = "roles"
     cov = coverage.compute(data["results"], evidence_root=run_dir, videos=data.get("videos", []))
     return data, stories, roles, module_of, cov
 
@@ -171,7 +180,9 @@ class Deck:
                 '<p class="sub">Giao diện chuẩn Frappe cho mọi người. TLC chỉ thêm luật Việt Nam, tuyến duyệt và số liệu đúng việc. '
                 'Mọi thứ trong tài liệu này được quay lại trên hệ thống đang chạy.</p>'
                 f'<div class="p-meta"><div>NGHIỆM THU<b>{self.passed}/{len(self.results)} ca đạt</b></div><div>PHÂN HỆ UAT<b>{modules} phân hệ, 17 nhóm BRD</b></div>'
-                f'<div>VIDEO<b>{len(self.data.get("videos", []))} phiên theo vai trò</b></div><div>YÊU CẦU BRD<b>{brd}/{len(self.cov["brd"])} đã gắn story</b></div></div></div>')
+                f'<div>VIDEO<b>{len(self.data.get("videos", []))} phiên theo vai trò</b></div>'
+                f'<div>THAO TÁC THẬT<b>{sum(1 for r in self.results if r.get("ui_ops"))}/{len(self.results)} ca có cú nhấp/phím</b></div>'
+                f'<div>YÊU CẦU BRD<b>{brd}/{len(self.cov["brd"])} đã gắn story</b></div></div></div>')
         self.add("Trang bìa", "TLC HRM", body, kind="night", foot=("Frappe 16 · ERPNext 16 · HRMS 16 · erpnextvn · tlc_hr", "Dữ liệu demo hư cấu, 60 nhân sự"))
 
     def pains(self):
@@ -225,6 +236,25 @@ class Deck:
             f'<h3 style="margin:26px 0 10px">Nhóm yêu cầu BRD</h3><table class="p-table"><thead><tr><th>Mã</th><th>Nhóm</th><th>Phân hệ đáp ứng</th><th>Số YC</th><th>Có bằng chứng đạt</th></tr></thead><tbody>{rows}</tbody></table></div>'
         self.add("Bản đồ phân hệ", "Phạm vi", body, foot=("Đạt = yêu cầu có story, AC và ca UAT đạt trong lượt chạy này", ""))
 
+    def journey_video(self, role_key):
+        """The continuous video of one role's whole day, joined by roles_stitch.sh from that role's sessions."""
+        name = JOURNEY_CODE.get(role_key)
+        if not name:
+            return None
+        for candidate in (self.run_dir / "videos" / f"{name}.mp4", self.run_dir / f"{name}.mp4"):
+            if candidate.is_file():
+                return {"file": f"videos/{name}.mp4", "account": name, "code": "NGAY-LAM-VIEC"}
+        return None
+
+    def journey_player(self, v, cases):
+        vid = self.video(v)
+        if vid is None:
+            return ""
+        steps = "".join(f'<li><b>{E(r["id"])}</b> {E(r["function"])}</li>' for r in cases)
+        return (f'<div class="p-journey"><div class="p-jhead">Cả ngày làm việc của vai trò này, quay liền mạch '
+                f'<span>{len(cases)} việc</span></div><video class="p-video" controls preload="none" data-blob="{vid}"></video>'
+                f'<ol class="p-jsteps">{steps}</ol></div>')
+
     def role_slides(self):
         videos_by_role = defaultdict(list)
         for v in self.data.get("videos", []):
@@ -239,17 +269,22 @@ class Deck:
             accounts = {v["account"] for v in vids}
             cases = [r for r in self.results if r["account"].split("@")[0] in accounts]
             ok = sum(r["status"] == "Đạt" for r in cases)
+            journey = self.journey_video(key)
+            jcases = [r for r in self.results if r["id"].startswith("RV-")] if journey else []
             acts = ""
             for sid in (role or {}).get("journeys", []):
                 s = all_stories.get(sid)
                 if s:
                     acts += f'<li><b>{E(sid)}</b> {E(s.get("title", ""))}</li>'
             side = (f'<div class="p-side"><div class="card"><h3>{E(title)}</h3><p class="muted">{E((role or {}).get("interface", ""))}</p>'
-                    f'<p><span class="p-pill ok">{ok}/{len(cases)} ca đạt</span> <span class="p-pill">{len(vids)} video</span></p>'
+                    f'<p><span class="p-pill ok">{ok}/{len(cases)} ca đạt</span> <span class="p-pill">{len(vids)} video</span>'
+                    f'<span class="p-pill">{sum(1 for r in cases if r.get("ui_ops"))} ca có thao tác thật</span></p>'
                     f'<h4>Hoạt động trên hệ thống</h4><ul class="p-acts">{acts or "".join(f"<li>{E(c)}</li>" for c in sorted({r["function"] for r in cases})[:12])}</ul></div></div>')
+            left = (self.journey_player(journey, jcases) if journey else "") + self.video_player(vids)
             body = self.head("QUY TRÌNH THEO VAI TRÒ", f'{E(title)}: <em>làm việc thật</em> trên giao diện chuẩn.') + \
-                f'<div class="p-rolegrid">{self.video_player(vids)}{side}</div>'
-            self.add(f"Vai trò · {title}", "Vai trò", body, foot=("Bấm một ca bên phải video để tua đến đúng đoạn · video quay desktop 1366×820", ""))
+                f'<div class="p-rolegrid">{left}{side}</div>'
+            self.add(f"Vai trò · {title}", "Vai trò", body,
+                     foot=("Trên: cả ngày làm việc quay liền mạch · Dưới: từng ca, bấm để tua đến đúng đoạn · desktop 1366×820", ""))
 
     def module_slides(self):
         for key, (title, dom, dg, native, tlc) in MODULES.items():
@@ -277,12 +312,16 @@ class Deck:
             if not rs:
                 continue
             ok = sum(r["status"] == "Đạt" for r in rs)
+            real = sum(1 for r in rs if r.get("ui_ops"))
             pct = ok * 100 // len(rs)
             rows += (f'<tr><td>{E(title)}</td><td class="n">{len(rs)}</td><td class="n">{ok}</td>'
+                     f'<td class="n {"ok" if real == len(rs) else "ko"}">{real}/{len(rs)}</td>'
                      f'<td><div class="p-bar"><i style="width:{pct}%"></i></div></td></tr>')
         roles = Counter(r["role"] for r in self.results)
-        body = self.head("KẾT QUẢ NGHIỆM THU", f'<em>{self.passed}/{len(self.results)} ca đạt</em>, quay video desktop, dữ liệu reset trước khi chạy.') + \
-            f'<div class="grid g2"><div class="p-scroll"><table class="p-table"><thead><tr><th>Phân hệ</th><th>Ca</th><th>Đạt</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>' \
+        body = self.head("KẾT QUẢ NGHIỆM THU", f'<em>{self.passed}/{len(self.results)} ca đạt</em> — mỗi ca phải là '
+                                               f'<em>thao tác thật trên giao diện</em> (đếm cú nhấp và phím trong trang), '
+                                               f'quay video desktop, dữ liệu reset trước khi chạy.') + \
+            f'<div class="grid g2"><div class="p-scroll"><table class="p-table"><thead><tr><th>Phân hệ</th><th>Ca</th><th>Đạt</th><th>Thao tác UI</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>' \
             f'<div class="card"><h3>Ca theo người thực hiện</h3><table class="p-table">{"".join(f"<tr><td>{E(k)}</td><td class=n>{v}</td></tr>" for k, v in roles.most_common(14))}</table></div></div>'
         self.add("Kết quả UAT", "Nghiệm thu", body, foot=(f"Lượt {E(self.data['run'])} · image {E(str(self.data.get('image', '')))}", ""))
 
@@ -346,11 +385,15 @@ class Deck:
                     vid = self.video(v) if v else None
                 play = (f'<button class="p-play" data-blob="{vid}" data-t="{seconds(r.get("time"))}">▶ {E(r.get("time") or "")}</button>'
                         if vid is not None else "")
+                ops = r.get("ui_ops")
+                opscell = "—" if ops is None else (f'<span class="p-pill ok">{ops}</span>' if ops else '<span class="p-pill ko">0</span>')
                 rows += (f'<tr><td><b>{E(r["id"])}</b><small>{E(r["account"])}</small></td><td>{E(r["function"])}<small>{E(r.get("steps", ""))}</small></td>'
                          f'<td>{E(r.get("expected", ""))}</td><td>{E(r.get("actual", ""))}</td>'
-                         f'<td><span class="p-pill {"ok" if r["status"] == "Đạt" else "ko"}">{E(r["status"])}</span>{play}</td><td>{self.shot(r, 150)}</td></tr>')
-            body = self.head(f"PHỤ LỤC · {E(title)}", f'Toàn bộ <em>{len(rs)} ca</em>: bước, kết quả mong đợi, thực tế, ảnh, video.') + \
-                f'<div class="p-scroll tall"><table class="p-table p-cases"><thead><tr><th>Ca</th><th>Chức năng / bước</th><th>Mong đợi</th><th>Thực tế</th><th>KQ</th><th>Ảnh</th></tr></thead><tbody>{rows}</tbody></table></div>'
+                         f'<td><span class="p-pill {"ok" if r["status"] == "Đạt" else "ko"}">{E(r["status"])}</span>{play}</td>'
+                         f'<td class="n">{opscell}</td><td>{self.shot(r, 150)}</td></tr>')
+            body = self.head(f"PHỤ LỤC · {E(title)}", f'Toàn bộ <em>{len(rs)} ca</em>: bước, kết quả mong đợi, thực tế, '
+                                                      f'<em>số cú nhấp/phím thật trong trang</em>, ảnh, video.') + \
+                f'<div class="p-scroll tall"><table class="p-table p-cases"><thead><tr><th>Ca</th><th>Chức năng / bước</th><th>Mong đợi</th><th>Thực tế</th><th>KQ</th><th>Thao tác UI</th><th>Ảnh</th></tr></thead><tbody>{rows}</tbody></table></div>'
             self.add(f"Phụ lục · {title}", "Phụ lục", body, foot=("Cuộn trong bảng · bấm ▶ để xem đúng đoạn video · bấm ảnh để phóng to", ""))
 
     def build(self):
@@ -375,7 +418,7 @@ EXTRA_CSS = """
 .p-cover h1{font-family:var(--font-display);font-size:104px;line-height:1.02;font-weight:800}
 .p-cover h1 span{color:#E7B9D9}
 .p-cover .sub{font-size:30px;line-height:1.5;max-width:1300px;margin-top:34px;color:rgba(246,238,243,.82)}
-.p-meta{position:absolute;left:132px;right:132px;bottom:120px;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.p-meta{position:absolute;left:132px;right:132px;bottom:120px;display:grid;grid-template-columns:repeat(5,1fr);gap:24px}
 .p-meta div{border-top:2px solid rgba(255,255,255,.25);padding-top:16px;font-family:var(--font-mono);font-size:17px;letter-spacing:.12em;color:#7FD3D6}
 .p-meta b{display:block;font-family:var(--font-body);letter-spacing:0;font-size:30px;color:#fff;margin-top:8px}
 .g2{grid-template-columns:1fr 1fr}.g4{grid-template-columns:repeat(4,1fr)}
@@ -398,6 +441,12 @@ EXTRA_CSS = """
 .p-pick{font-size:18px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);width:100%;font-family:var(--font-body)}
 .p-pane{display:none;flex:1;min-height:0;flex-direction:column}.p-pane.on{display:flex}
 .p-video{width:100%;max-height:500px;background:#111;border-radius:12px}
+.p-rolegrid>div:first-child{overflow:auto;min-height:0;display:flex;flex-direction:column;padding-right:4px}
+.p-journey{border:1px solid var(--teal);border-radius:14px;padding:12px 14px;background:#fff;margin-bottom:14px;flex:none}
+.p-jhead{font-family:var(--font-mono);font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:8px}
+.p-jhead span{color:var(--muted);text-transform:none;letter-spacing:0}
+.p-jsteps{margin:8px 0 0;padding-left:20px;font-size:15px;line-height:1.4;max-height:160px;overflow:auto}
+.p-jsteps b{font-family:var(--font-mono);font-size:12px;color:var(--teal)}
 .p-chapters{overflow:auto;margin-top:10px;flex:1;display:flex;flex-direction:column;gap:4px}
 .p-ch{text-align:left;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-size:15px;cursor:pointer;display:flex;gap:8px;align-items:baseline}
 .p-ch span{margin-left:auto;font-family:var(--font-mono);color:var(--muted)}.p-ch.ok b{color:#1d7a3a}.p-ch.ko b{color:var(--rose)}
@@ -442,7 +491,7 @@ function show(i){ cur=Math.max(0,Math.min(i,slides.length-1));
   slides.forEach((s,k)=>{ const on=k===cur; s.classList.toggle('active',on); s.classList.toggle('visible',on); if(!on) s.querySelectorAll('video').forEach(v=>v.pause()); });
   counter.textContent=(cur+1)+' / '+slides.length; progress.style.width=((cur+1)/slides.length*100)+'%'; jump.value=cur;
   history.replaceState(null,'','#'+(cur+1));
-  slides[cur].querySelectorAll('.p-pane.on video[data-blob]').forEach(v=>{ if(!v.src) v.src=blobUrl(v.dataset.blob); }); }
+  slides[cur].querySelectorAll('.p-pane.on video[data-blob], .p-journey video[data-blob]').forEach(v=>{ if(!v.src) v.src=blobUrl(v.dataset.blob); }); }
 addEventListener('resize',scale); scale();
 document.getElementById('prev').onclick=()=>show(cur-1); document.getElementById('next').onclick=()=>show(cur+1); jump.onchange=()=>show(+jump.value);
 addEventListener('keydown',e=>{ if(['INPUT','SELECT','TEXTAREA','VIDEO'].includes(e.target.tagName)) return; if(document.querySelector('.p-modal.on')){ if(e.key==='Escape') closeModal(); return; }

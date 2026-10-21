@@ -4,7 +4,11 @@
 set -eu
 export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 HERE=$(cd "$(dirname "$0")" && pwd)
-if [ "${1:-}" = "--reset" ]; then
+# One run at a time: the journeys share the demo data of one site, so a second run would reset under the first.
+exec 9>/tmp/tlc-uat.lock
+flock 9
+# A single module is only meaningful on clean demo data (the expected numbers assume it), so an ONLY= run resets too.
+if [ "${1:-}" = "--reset" ] || [ -n "${ONLY:-}" ]; then
   kubectl -n tlc-hr exec deploy/backend -- bench --site tlc-hr.local tlc seed reset-leave 2>/dev/null | tail -1
   kubectl -n tlc-hr exec deploy/backend -- bench --site tlc-hr.local tlc seed reset-payroll 2>/dev/null | tail -1
   # closed periods first: a locked month refuses the demo overtime and corrections the next resets write
