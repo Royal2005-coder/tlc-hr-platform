@@ -23,12 +23,14 @@ OUT = Path(os.environ.get("OUT_DIR", "/uat/out")) / RUN_ID
 DESKTOP = {"width": 1366, "height": 820}
 PHONE = {"width": 390, "height": 844}
 SLOW_MO = int(os.environ.get("SLOW_MO", "250"))
+# Workers use the phone in real life; the evidence pack is recorded on the desktop web unless PHONE_UAT=1.
+PHONE_UAT = os.environ.get("PHONE_UAT") == "1"
 TO_MANAGER, TO_HR, APPROVED, REJECTED, DRAFT = "Chờ quản lý duyệt", "Chờ nhân sự duyệt", "Đã duyệt", "Từ chối", "Nháp"
 
 ACCOUNTS = {
     "an": {"name": "Nguyễn Hoài An", "role": "Nhân viên văn phòng hội sở (Kinh doanh)", "workforce": "Hội sở", "approver": "Trần Minh Quang"},
-    "binh": {"name": "Trần Văn Bình", "role": "Công nhân Nhà máy 1 - điện thoại", "workforce": "Nhà máy", "approver": "Đặng Văn Hùng"},
-    "f2w01": {"name": None, "role": "Công nhân Nhà máy 2 - điện thoại", "workforce": "Nhà máy", "approver": "Lương Quốc Hải"},
+    "binh": {"name": "Trần Văn Bình", "role": "Công nhân Nhà máy 1", "workforce": "Nhà máy", "approver": "Đặng Văn Hùng"},
+    "f2w01": {"name": None, "role": "Công nhân Nhà máy 2", "workforce": "Nhà máy", "approver": "Lương Quốc Hải"},
     "hung": {"name": "Đặng Văn Hùng", "role": "Quản lý Nhà máy 1 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
     "hoa": {"name": "Lê Thị Hòa", "role": "HR hội sở - Giám đốc nhân sự (HR Lead)", "workforce": "Hội sở", "approver": "Nguyễn Văn Thành"},
     "lan": {"name": "Hoàng Thị Lan", "role": "HR hội sở - Chuyên viên nhân sự (HR Officer)", "workforce": "Hội sở", "approver": "Lê Thị Hòa"},
@@ -81,6 +83,7 @@ CAPTION_INIT = "window.addEventListener('DOMContentLoaded', () => { (" + CAPTION
 
 class Session:
     def __init__(self, browser, code, account, phone=False):
+        phone = phone and PHONE_UAT
         self.code, self.account, self.phone = code, account, phone
         self.label = ACCOUNTS[account]["role"]
         viewport = PHONE if phone else DESKTOP
@@ -398,7 +401,7 @@ def factory_worker_1(browser):
     s = Session(browser, "CN1", "binh", phone=True)
     first_case(s, "CN1-01")
     day, half = working_day(2), working_day(5)
-    with case(s, "CN1-02", "Xin nghỉ 1 ngày trên điện thoại", "Xin nghỉ phép > Lưu > Hành động > Gửi duyệt", f"{vn(day)}, Con ốm",
+    with case(s, "CN1-02", "Công nhân xin nghỉ 1 ngày trong app Frappe HR", "Xin nghỉ phép > Lưu > Hành động > Gửi duyệt", f"{vn(day)}, Con ốm",
               "Chờ quản lý duyệt, người duyệt Đặng Văn Hùng") as r:
         REQ["binh_full"] = hrms_request_leave(s, day, day, "Con ốm")
         doc = api_get(s, f"/api/resource/Leave Application/{REQ['binh_full']}").json()["data"]
@@ -588,7 +591,7 @@ def results_check(browser):
     s = Session(browser, "CN1b", "binh", phone=True)
     login(s)
     p = s.page
-    with case(s, "CN1-05", "Kết quả đơn trên điện thoại", "Mở danh sách đơn; mở đơn bị từ chối", f"{REQ['binh_full']}, {REQ['binh_half']}",
+    with case(s, "CN1-05", "Công nhân xem kết quả đơn", "Mở danh sách đơn; mở đơn bị từ chối", f"{REQ['binh_full']}, {REQ['binh_half']}",
               "Đơn 1 ngày Đã duyệt; đơn nửa ngày Từ chối, thấy lý do 'Trùng ca kiểm kê kho' (chỉ đọc)") as r:
         text = hrms_list_states(s)
         check(APPROVED in text and REJECTED in text, text[:200])
@@ -678,7 +681,7 @@ def overtime_flow(browser):
     s = Session(browser, "OT", "binh", phone=True)
     login(s)
     p = s.page
-    with case(s, "OT-04", "Công nhân nhận thông báo và đồng ý trên điện thoại", "Chuông thông báo > mở đơn > Hành động > Đồng ý", REQ["ot"],
+    with case(s, "OT-04", "Công nhân nhận thông báo và đồng ý tăng ca", "Chuông thông báo > mở đơn > Hành động > Đồng ý", REQ["ot"],
               "Có thông báo; đơn chuyển Chờ giám đốc duyệt, ghi thời điểm đồng ý") as r:
         logs = api_get(s, "/api/resource/Notification Log?fields=[\"subject\",\"document_name\"]&filters=" +
                        json.dumps([["document_name", "=", REQ["ot"]]])).json()["data"]

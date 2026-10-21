@@ -15,6 +15,12 @@ mkdir -p "$HERE/out"
 docker run --rm --network host --ipc=host -e DEMO_PASSWORD="$DEMO_PASSWORD" -e RUN_ID="$RUN_ID" -e IMAGE_TAG="$IMAGE_TAG" -e TZ=Asia/Ho_Chi_Minh \
   -v "$HERE:/uat" -w /uat mcr.microsoft.com/playwright/python:v1.49.0-noble \
   sh -c "pip install -q --root-user-action=ignore playwright==1.49.0 openpyxl==3.1.5 2>/dev/null; python run_uat.py; RC=\$?; rm -rf /uat/out/$RUN_ID/videos/raw; chown -R $(id -u):$(id -g) /uat/out/$RUN_ID; exit \$RC" || STATUS=$?
+# Playwright WebM has no index (players cannot seek): an H.264 MP4 copy of each video, small and seekable.
+docker run --rm --user "$(id -u):$(id -g)" -v "$HERE/out/$RUN_ID/videos:/v" --entrypoint sh jrottenberg/ffmpeg:6.1-ubuntu -c \
+  'for f in /v/*.webm; do ffmpeg -loglevel error -y -i "$f" -c:v libx264 -preset veryfast -crf 30 -pix_fmt yuv420p \
+   -movflags +faststart -an "${f%.webm}.mp4"; done' || true
+# The same run packed into one HTML file (cases, screenshots, videos, Excel) to send and open offline.
+python3 "$HERE/offline_html.py" "$HERE/out/$RUN_ID" || true
 # Index of every run, newest first.
 {
   echo '<!doctype html><html lang="vi"><meta charset="utf-8"><title>UAT TLC HRM</title><body style="font:16px system-ui;max-width:800px;margin:32px auto">'
