@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 from lib import ACCOUNTS, BASE, EXPECTED_SECTIONS, MATRIX, OUT, RESULTS, RUN_ID, SECTION_LABEL, SECTIONS, SLOW_MO, VIDEOS
 
 # Run order: later modules use what earlier ones leave behind (approved leave, locked periods, payroll ...).
-MODULES = ["leave", "overtime"]
+MODULES = ["leave", "overtime", "attendance"]
 
 
 def write_outputs():

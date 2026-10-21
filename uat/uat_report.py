@@ -76,9 +76,9 @@ def write_xlsx(out, run_id, results, matrix, videos, accounts, sections, labels,
         shown = set(matrix.get(account, []))
         cells = []
         for s in sections:
-            want, got = s in expected[account], s in shown
+            want, got = s in expected.get(account, set()), s in shown
             cells.append(("✔ hiện" if got else "— ẩn") + ("" if want == got else " (SAI)"))
-        rows.append([f"{account}@demo.example", info["role"]] + cells + ["Đạt" if shown == expected[account] else "Không đạt"])
+        rows.append([f"{account}@demo.example", info["role"]] + cells + ["Đạt" if shown == expected.get(account, set()) else "Không đạt"])
     table(ws, headers, rows, [22, 40] + [16] * len(sections) + [14])
     color_status(ws, len(headers))
 

@@ -1,0 +1,87 @@
+module: attendance
+title: Chấm công, giải trình và chốt kỳ công
+wave: I1, I2, W1
+summary: Chấm công GPS trên app trong bán kính nhà máy; giải trình công qua trưởng nhà máy và HR; kỳ công tháng do HR lập, trưởng từng nhà máy xác nhận, HR đối soát, CEO ký khoá; sau khoá chỉ sửa bằng điều chỉnh sau chốt.
+stories:
+  - id: ST-AT-01
+    role: worker
+    title: Chấm công GPS tại nhà máy
+    story: Là công nhân, tôi muốn bấm Vào ca trên app khi đến cổng nhà máy, để công của tôi được ghi đúng ca mà không cần máy chấm công.
+    ac:
+      - given: tôi đang ở nhà, cách nhà máy vài km
+        when: bấm Vào ca
+        then: không ghi nhận, báo phải ở trong bán kính của nhà máy
+      - given: tôi ở cổng nhà máy, ca đang mở
+        when: bấm Vào ca > Xác nhận
+        then: ghi một lượt chấm công có toạ độ, gắn với ca của tôi; cuối ngày hệ thống tự tính bảng công
+    brd: [HR-CP-01, HR-CP-02, HR-CP-03]
+    blueprint_uat: [UAT-WF-01]
+    cases: [AT-01, AT-02]
+  - id: ST-AT-02
+    role: worker
+    title: Giải trình quên chấm công
+    story: Là công nhân, khi quên chấm ra tôi muốn giải trình ngay trên app, để không bị tính vắng.
+    ac:
+      - given: một ngày đã qua tôi quên chấm ra
+        when: tạo Yêu cầu chấm công loại Quên chấm ra, có giải thích, Gửi duyệt
+        then: đơn đến trưởng nhà máy của tôi (hệ thống tự điền), sau đó HR duyệt
+      - given: HR duyệt
+        then: ngày đó được ghi Có mặt trong bảng công
+    brd: [HR-CP-04]
+    blueprint_uat: []
+    cases: [AT-03, AT-04, AT-05]
+  - id: ST-AT-03
+    role: hr
+    title: HR lập kỳ công tháng
+    story: Là HR hội sở, tôi muốn hệ thống tự tổng hợp công tháng của từng nhà máy và hội sở, để không phải xuất Excel đối chiếu bằng tay.
+    ac:
+      - given: tháng trước đã kết thúc
+        when: tạo kỳ công cho từng phạm vi
+        then: có bảng công từng người (có mặt, vắng, nghỉ phép, đi muộn, giờ tăng ca đã duyệt) và danh sách việc chưa xử lý
+      - given: còn đơn chưa duyệt xong hoặc chấm công chưa ghi
+        then: không gửi được, hệ thống liệt kê từng việc
+      - given: kỳ của nhà máy
+        then: gửi trưởng nhà máy xác nhận; kỳ hội sở gửi thẳng HR đối soát
+    brd: [HR-CP-24, HR-CP-27]
+    blueprint_uat: [UAT-WF-07]
+    cases: [PD-01, PD-02]
+  - id: ST-AT-04
+    role: factory_head
+    title: Trưởng nhà máy xác nhận công của nhà máy mình
+    story: Là trưởng nhà máy, tôi muốn xem và xác nhận bảng công của đúng nhà máy tôi trước khi HR và CEO duyệt, để công nhân được trả đủ.
+    ac:
+      - given: workspace TLC Quản lý
+        then: thẻ Kỳ công chờ tôi xác nhận chỉ đếm kỳ của nhà máy tôi; kỳ của nhà máy khác bị chặn (403)
+      - given: bảng công thiếu
+        when: Hành động > Trả lại, ghi lý do
+        then: kỳ về Nháp cho HR làm mới rồi gửi lại
+      - when: Hành động > Xác nhận
+        then: kỳ chuyển Chờ nhân sự đối soát
+    brd: [HR-CP-24, HR-CHG-17]
+    blueprint_uat: []
+    cases: [PD-03, PD-04, PD-05]
+  - id: ST-AT-05
+    role: ceo
+    title: HR đối soát, CEO ký và khoá
+    story: Là CEO, tôi muốn ký kỳ công đã được trưởng nhà máy xác nhận và HR đối soát, để bảng công chốt làm căn cứ tính lương.
+    ac:
+      - given: HR đối soát xong 4 kỳ
+        then: workspace TLC Điều hành có thẻ Kỳ công chờ ký = 4
+      - when: Hành động > Ký và khoá
+        then: kỳ Đã khoá, ghi người ký và thời điểm
+    brd: [HR-CP-24]
+    blueprint_uat: []
+    cases: [PD-06, PD-07]
+  - id: ST-AT-06
+    role: hr
+    title: Sau khi khoá chỉ sửa bằng điều chỉnh sau chốt
+    story: Là công ty, tôi muốn không ai sửa trực tiếp công đã khoá, và mọi thay đổi sau chốt có lý do, người duyệt và nhật ký.
+    ac:
+      - given: kỳ công đã khoá
+        when: tạo giải trình thường cho một ngày trong kỳ
+        then: bị chặn
+      - when: HR lập điều chỉnh sau chốt có lý do
+        then: đi qua trưởng nhà máy và HR khác; khi duyệt ngày đó được sửa, kỳ công ghi nhật ký, tính vào kỳ lương kế tiếp
+    brd: [HR-CP-25, HR-CP-26]
+    blueprint_uat: [UAT-WF-08]
+    cases: [PD-08, PD-09, PD-10, PD-11]

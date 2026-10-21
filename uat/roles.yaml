@@ -2,7 +2,7 @@
 roles:
   - key: worker
     title: Công nhân nhà máy
-    accounts: [binh (Nhà máy 1), f2w01 (Nhà máy 2)]
+    accounts: [binh (Nhà máy 1), f2w01 (Nhà máy 2), f3w01 (Nhà máy 3), f3w06 (Nhà máy 3)]
     people: 29 người ở 3 nhà máy, làm ca hành chính, ca đêm 22–06, ca cao điểm 07–19
     interface: App Frappe HR (/hrms) trên trình duyệt; chấm công GPS tại cổng nhà máy
     goals: [Chấm công đúng ca, Xin nghỉ nhanh, Biết còn bao nhiêu phép và giờ tăng ca, Được hỏi trước khi tăng ca, Xem phiếu lương]
@@ -10,13 +10,15 @@ roles:
       - Phải gặp tổ trưởng/HR để hỏi số ngày phép còn lại và giờ tăng ca
       - Tăng ca bị xếp mà không được hỏi ý kiến (trái BLLĐ 2019)
       - Quên chấm công thì không biết giải trình ở đâu
+      - Máy chấm công ở cổng hay xếp hàng, hỏng là mất công
       - Không biết đơn đã được duyệt chưa
     improvements:
       - Trang chủ app hiện số dư phép, nút xin nghỉ, phiếu lương
       - Đề nghị tăng ca gửi thông báo; người lao động tự Đồng ý / Từ chối có lý do
-      - Giải trình công trên app, đi thẳng tới trưởng nhà máy
+      - Giải trình công trên app, đi thẳng tới trưởng nhà máy; hệ thống tự điền ca
+      - Chấm công GPS trên app, chỉ nhận trong bán kính nhà máy
       - Trạng thái và lý do từ chối hiện ngay trên đơn
-    journeys: [ST-GOV-01, ST-LV-04, ST-LV-05, ST-LV-11, ST-OT-03]
+    journeys: [ST-GOV-01, ST-AT-01, ST-AT-02, ST-LV-04, ST-LV-05, ST-LV-11, ST-OT-03]
   - key: office
     title: Nhân viên văn phòng hội sở SG
     accounts: [an (Kinh doanh)]
@@ -41,11 +43,13 @@ roles:
       - Duyệt rải rác qua tin nhắn, không biết ai cũng nghỉ hôm đó
       - Không biết công nhân đã tăng ca bao nhiêu giờ trong tháng/năm
       - Dữ liệu nhà máy khác lẫn vào
+      - Cuối tháng phải đối chiếu bảng công Excel với HR qua nhiều lần gửi qua lại
     improvements:
       - Dòng đầu form ghi số dư sau duyệt và người nghỉ trùng
       - Đề nghị tăng ca hiện tổng giờ tháng/năm, chặn vượt luật
+      - Kỳ công tháng tự tổng hợp; trưởng nhà máy xác nhận hoặc trả lại có lý do ngay trên hệ thống
       - Phạm vi theo cây báo cáo – chỉ thấy người của nhà máy mình (403 với nhà máy khác)
-    journeys: [ST-GOV-01, ST-LV-03, ST-LV-06, ST-LV-07, ST-OT-01, ST-OT-02]
+    journeys: [ST-GOV-01, ST-LV-03, ST-LV-06, ST-LV-07, ST-OT-01, ST-OT-02, ST-AT-04]
   - key: hr
     title: HR văn phòng SG
     accounts: [hoa (Giám đốc nhân sự – HR Lead), lan (Chuyên viên nhân sự)]
@@ -55,12 +59,14 @@ roles:
     pain_points:
       - Nhiều việc nhất (~50 hoạt động), thông tin nằm ở Excel và Bitrix24
       - Kiểm tra số dư phép và giờ tăng ca bằng tay
+      - Chốt công bằng Excel, sau chốt vẫn bị sửa không dấu vết
       - Tham số lương thay đổi theo luật (lương cơ sở 01/07/2026, thuế 5 bậc)
     improvements:
       - Danh sách chờ duyệt và thẻ số liệu một màn hình
       - Báo cáo số dư phép mở sẵn cả năm; tham số lương VN 2026 có ngày hiệu lực
       - HR không tự duyệt đơn của mình; HR khác duyệt thay
-    journeys: [ST-GOV-01, ST-LV-05, ST-LV-08, ST-LV-09]
+      - Kỳ công liệt kê việc chưa xử lý; sau khi CEO khoá chỉ sửa bằng điều chỉnh sau chốt có nhật ký
+    journeys: [ST-GOV-01, ST-LV-05, ST-LV-08, ST-LV-09, ST-AT-03, ST-AT-06]
   - key: ceo
     title: CEO văn phòng SG
     accounts: [thanh (Tổng giám đốc)]
@@ -73,7 +79,8 @@ roles:
     improvements:
       - Workspace có thẻ và biểu đồ toàn công ty
       - Chỉ nhận đề nghị tăng ca sau khi người lao động đồng ý
-    journeys: [ST-GOV-01, ST-LV-09, ST-LV-10, ST-OT-04]
+      - Ký khoá kỳ công từ thẻ Kỳ công chờ ký
+    journeys: [ST-GOV-01, ST-LV-09, ST-LV-10, ST-OT-04, ST-AT-05]
   - key: support
     title: Vai trò hỗ trợ (có video)
     accounts: [quang (Trưởng phòng Kinh doanh), ketoan (Kế toán – từ đợt Lương)]

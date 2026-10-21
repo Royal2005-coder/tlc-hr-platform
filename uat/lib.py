@@ -32,6 +32,9 @@ ACCOUNTS = {
     "hung": {"name": "Đặng Văn Hùng", "role": "Quản lý Nhà máy 1 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
     "hoa": {"name": "Lê Thị Hòa", "role": "HR hội sở - Giám đốc nhân sự (HR Lead)", "workforce": "Hội sở", "approver": "Nguyễn Văn Thành"},
     "lan": {"name": "Hoàng Thị Lan", "role": "HR hội sở - Chuyên viên nhân sự (HR Officer)", "workforce": "Hội sở", "approver": "Lê Thị Hòa"},
+    "nm2": {"name": "Lương Quốc Hải", "role": "Quản lý Nhà máy 2 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
+    "nm3": {"name": "Đinh Công Sơn", "role": "Quản lý Nhà máy 3 (Head Manager nhà máy)", "workforce": "Nhà máy", "approver": "Nguyễn Văn Thành"},
+    "f3w01": {"name": None, "role": "Công nhân Nhà máy 3 (ca cao điểm)", "workforce": "Nhà máy", "approver": "Đinh Công Sơn"},
     "quang": {"name": "Trần Minh Quang", "role": "Hỗ trợ - Trưởng phòng Kinh doanh hội sở", "workforce": "Hội sở", "approver": "Nguyễn Văn Thành"},
     "thanh": {"name": "Nguyễn Văn Thành", "role": "CEO hội sở - Tổng giám đốc", "workforce": "Hội sở", "approver": None},
 }
@@ -81,14 +84,16 @@ CAPTION_INIT = "window.addEventListener('DOMContentLoaded', () => { (" + CAPTION
 
 
 class Session:
-    def __init__(self, browser, code, account, phone=False):
+    def __init__(self, browser, code, account, phone=False, geolocation=None):
         phone = phone and PHONE_UAT
         self.code, self.account, self.phone = code, account, phone
-        self.label = ACCOUNTS[account]["role"]
+        self.label = ACCOUNTS.get(account, {}).get("role", "Công nhân nhà máy")
         viewport = PHONE if phone else DESKTOP
         self.context = browser.new_context(viewport=viewport, record_video_dir=str(OUT / "videos" / "raw"), record_video_size=viewport,
                                            locale="vi-VN", timezone_id="Asia/Ho_Chi_Minh", is_mobile=phone, has_touch=phone,
-                                           device_scale_factor=2 if phone else 1)
+                                           device_scale_factor=2 if phone else 1,
+                                           **({"geolocation": {"latitude": geolocation[0], "longitude": geolocation[1]},
+                                               "permissions": ["geolocation"]} if geolocation else {}))
         self.context.add_init_script("window.__uatPos = '" + ("top" if phone else "bottom") + "';")
         self.context.add_init_script(CAPTION_INIT)
         self.context.set_default_timeout(25000)
@@ -304,7 +309,7 @@ def workflow_actions(p):
     return items
 
 
-def desk_action(s, name, action, reason=None):
+def desk_action(s, name, action, reason=None, doctype="Leave Application"):
     """Hành động → Duyệt or Từ chối on the standard form; Từ chối asks the reason in a dialog. Returns the new state."""
     p = s.page
     open_actions(p)
@@ -320,7 +325,7 @@ def desk_action(s, name, action, reason=None):
             dialog.locator("textarea").first.fill(reason)
         dialog.get_by_role("button", name="Từ chối").last.click()
     p.wait_for_timeout(3500)
-    return state_of(s, name)
+    return doc_state(s, doctype, name)
 
 
 def doc_state(s, doctype, name):
