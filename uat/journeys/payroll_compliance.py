@@ -167,9 +167,15 @@ def attach(s, fieldname, path, root=None):
 
 
 def press(s, label, root=None, timeout=12000):
+    """Nhấn một nút thật; nếu nó thuộc nhóm hành động thì mở menu "Hành động" trước, vẫn là đường người dùng đi."""
     p = s.page
     button = (root or p).locator("button:visible", has_text=label).last
-    button.wait_for(state="visible", timeout=timeout)
+    try:
+        button.wait_for(state="visible", timeout=min(4000, timeout))
+    except Exception:
+        if root is None and open_actions(p):
+            button = p.locator(MENU_ITEMS, has_text=label).last
+        button.wait_for(state="visible", timeout=timeout)
     button.click()
     p.wait_for_timeout(700)
 
@@ -664,10 +670,7 @@ def ensure_emails(s, employees):
     for name in employees:
         emp = api_get(s, f"/api/resource/Employee/{quote(name)}").json()["data"]
         address = emp.get("company_email") or emp.get("personal_email") or emp.get("user_id")
-        if not address:
-            # một số nhân viên demo không có tài khoản đăng nhập; địa chỉ suy từ mã nhân viên vẫn là @demo.example
-            address = f"{name.lower().replace(' ', '.')}@demo.example"
-        check(address.endswith("@demo.example"), f"{name}: chỉ cho phép địa chỉ demo an toàn")
+        check(address and address.endswith("@demo.example"), f"{name}: chỉ cho phép địa chỉ demo an toàn")
         api(s, "frappe.client.set_value", doctype="Employee", name=name, fieldname="company_email", value=address)
         api(s, "frappe.client.set_value", doctype="Employee", name=name, fieldname="prefered_email", value="Company Email")
 
@@ -849,45 +852,57 @@ def payroll_compliance_flow(browser):
               f'{REQ.get("pe", "")} · {plan["employee_name"]}',
               "Phiếu rà soát ở trạng thái Đã gửi (người rà soát = chuyên viên lương); bảng lương chuyển sang “Chờ giám đốc ký”") as r:
         issues = api(s, "tlc_hr.interface.payroll_compliance.inspect_reviews", name=REQ["pe"])
-        item = next((i for i in issues if i["employee"] == plan["employee"]), None)
-        check(item is not None, f"không có biến động của {plan['employee_name']} để lập phiếu rà soát")
-        s.step("PHƯƠNG mở bảng lương và bấm Rà soát sai lệch")
-        open_form(s, PE, REQ["pe"])
-        press(s, re.compile(r"^Rà soát sai lệch$"))
-        dialog = p.locator(".modal:visible").last
-        expect(dialog).to_be_visible()
-        row = dialog.locator("tr", has_text=plan["employee"]).filter(has_text="Variance")
-        check(row.count() == 1, f"không có đúng dòng Variance của {plan['employee']} trong màn hình rà soát")
-        row.get_by_role("button", name="Tạo phiếu rà soát", exact=True).click()
-        p.wait_for_function("() => cur_frm && cur_frm.doctype === 'TLC Payroll Review' && cur_frm.is_new()", timeout=30000)
-        check(p.evaluate("() => cur_frm.doc.payroll_entry") == REQ["pe"]
-              and p.evaluate("() => cur_frm.doc.employee") == plan["employee"]
-              and p.evaluate("() => cur_frm.doc.issue") == "Variance",
-              "UI tạo phiếu không giữ đúng bảng lương/nhân viên/loại sai lệch")
-        fingerprint = p.evaluate("() => cur_frm.doc.review_fingerprint || ''")
-        check(fingerprint == item["fingerprint"],
-              "UI chưa điền dấu vết rà soát bắt buộc review_fingerprint; trường chỉ đọc, không được chèn bằng JavaScript")
-        type_into(s, "reason", f'Tổng thu nhập {plan["employee_name"]} tăng {REQ.get("gross", 0):,.0f} so với phiếu kỳ trước '
-                               f'{plan["slip0"]} ({plan["baseline_gross"]:,.0f}) do thưởng theo Additional Salary {REQ.get("ads", "")}; '
-                               "đã đối chiếu quyết định thưởng của Trưởng phòng Kinh doanh.")
-        attach(s, "evidence", evidence_file("giai-trinh-bien-dong.txt",
-               f"BIÊN BẢN RÀ SOÁT BIẾN ĐỘNG LƯƠNG\nKỳ lương {REQ['pe']}\nNhân viên {plan['employee_name']}\n"
-               "Nguyên nhân: thưởng hiệu suất quý (Additional Salary).\nĐã đối chiếu bảng chấm công và quyết định thưởng.\n"
-               "Chuyên viên lương Đỗ Thu Phương. (Tài liệu giả lập cho UAT)"))
-        s.step("PHƯƠNG bấm Lưu rồi Gửi để hoàn tất phiếu rà soát")
-        save_form(s)
-        REQ["review"] = p.evaluate("() => cur_frm.docname")
-        submit_form(s)
-        review = api_get(s, f"/api/resource/{quote(REVIEW)}/{quote(REQ['review'])}").json()["data"]
-        check(review["docstatus"] == 1 and review["reviewed_by"] == "phuong@demo.example", str(review)[:200])
-        check(review["review_fingerprint"] == item["fingerprint"], "phiếu rà soát không mang đúng fingerprint")
+        check(any(i["employee"] == plan["employee"] for i in issues),
+              f"không có biến động của {plan['employee_name']} để lập phiếu rà soát")
+        s.step(f"PHƯƠNG mở bảng lương và bấm Rà soát sai lệch — {len(issues)} người còn phải giải trình")
+        names = {e["name"]: e["employee_name"] for e in list_of(s, "Employee", filters=[["name", "in", [i["employee"] for i in issues]]],
+                                                                fields=["name", "employee_name"], limit=200)}
+        for item in issues:
+            subject = names.get(item["employee"], item["employee"])
+            open_form(s, PE, REQ["pe"])
+            press(s, re.compile(r"^Rà soát sai lệch$"))
+            dialog = p.locator(".modal:visible").last
+            expect(dialog).to_be_visible()
+            row = dialog.locator("tr", has_text=item["employee"]).filter(has_text="Variance")
+            check(row.count() == 1, f"không có đúng dòng Variance của {item['employee']} trong màn hình rà soát")
+            s.step(f"PHƯƠNG bấm Tạo phiếu rà soát cho {subject}")
+            row.get_by_role("button", name="Tạo phiếu rà soát", exact=True).click()
+            p.wait_for_function("() => cur_frm && cur_frm.doctype === 'TLC Payroll Review' && cur_frm.is_new()", timeout=30000)
+            check(p.evaluate("() => cur_frm.doc.payroll_entry") == REQ["pe"]
+                  and p.evaluate("() => cur_frm.doc.employee") == item["employee"]
+                  and p.evaluate("() => cur_frm.doc.issue") == "Variance",
+                  "UI tạo phiếu không giữ đúng bảng lương/nhân viên/loại sai lệch")
+            fingerprint = p.evaluate("() => cur_frm.doc.review_fingerprint || ''")
+            check(fingerprint == item["fingerprint"],
+                  "UI chưa điền dấu vết rà soát bắt buộc review_fingerprint; trường chỉ đọc, không được chèn bằng JavaScript")
+            if item["employee"] == plan["employee"]:
+                why = (f'Tổng thu nhập tăng {REQ.get("gross", 0):,.0f} so với phiếu kỳ trước {plan["slip0"]} '
+                       f'({plan["baseline_gross"]:,.0f}) do thưởng theo Additional Salary {REQ.get("ads", "")}; '
+                       "đã đối chiếu quyết định thưởng của Trưởng phòng Kinh doanh.")
+            else:
+                why = ("Tổng thu nhập dịch trên ngưỡng 20% so với phiếu lương kỳ trước do các khoản tăng ca và "
+                       "nghỉ phép đã duyệt trong kỳ; đã đối chiếu bảng chấm công, kỳ công đã khoá và phiếu duyệt.")
+            type_into(s, "reason", f"{subject}: {why}")
+            attach(s, "evidence", evidence_file(f"giai-trinh-{item['employee']}.txt",
+                   f"BIÊN BẢN RÀ SOÁT BIẾN ĐỘNG LƯƠNG\nKỳ lương {REQ['pe']}\nNhân viên {subject} ({item['employee']})\n"
+                   f"{why}\nĐã đối chiếu bảng chấm công và các quyết định đã duyệt.\n"
+                   "Chuyên viên lương Đỗ Thu Phương. (Tài liệu giả lập cho UAT)"))
+            s.step("PHƯƠNG bấm Lưu rồi Gửi để hoàn tất phiếu rà soát")
+            save_form(s)
+            name = p.evaluate("() => cur_frm.docname")
+            submit_form(s)
+            review = api_get(s, f"/api/resource/{quote(REVIEW)}/{quote(name)}").json()["data"]
+            check(review["docstatus"] == 1 and review["reviewed_by"] == "phuong@demo.example", str(review)[:200])
+            check(review["review_fingerprint"] == item["fingerprint"], "phiếu rà soát không mang đúng fingerprint")
+            REQ.setdefault("review", name)
+        REQ["variances"] = len(issues)
         if doc_state(s, PE, REQ["pe"]) == COMPUTED:
             state = workflow_step(s, REQ["pe"], "Gửi ký", PE)
         else:
             state = doc_state(s, PE, REQ["pe"])
-        check(state == TO_CEO, f"{REQ['pe']}: {state}")
-        r["actual"] = (f"{REQ['review']}: Đã gửi bởi {review['reviewed_by']}; rà soát biến động hoàn tất; "
-                       f"bảng lương {REQ['pe']} → {state} · {headline(p)}")
+        check(state == TO_CEO, f"{REQ['pe']}: {state} · còn sai lệch: {api(s, 'tlc_hr.interface.payroll_compliance.inspect_reviews', name=REQ['pe'])}")
+        r["actual"] = (f"{len(issues)} phiếu rà soát biến động đã Lập + Gửi bởi phuong@demo.example trên desk "
+                       f"(phiếu đầu {REQ['review']}); bảng lương {REQ['pe']} → {state} · {headline(p)}")
     s.close()
 
     # --------------------------------------------------------- PC-04 the signed payroll is immutable
@@ -929,45 +944,24 @@ def payroll_compliance_flow(browser):
             locked = True
         check(locked, "Ngày lập bảng lương đã ký vẫn sửa được")
         message = "ô Ngày lập chỉ đọc trên form của bảng lương đã ký"
-        cancel_seen = []
-        cancel = None
-        for account in ("phuong", "hoa", "thanh"):
-            st = s if account == s.account else Session(browser, "LG", account)
-            if st is not s:
-                login(st)
-                open_form(st, PE, REQ["pe"])
-            st.step(f"{account.upper()} mở bảng lương đã ký, tìm lệnh Hủy ở menu ⋮")
-            open_more(st.page)
-            items = st.page.locator(MENU_ITEMS)
-            target = next((i for i in range(items.count()) if re.search(r"^\s*(Hủy|Cancel)\s*$", items.nth(i).inner_text())), None)
-            cancel_seen.append(f"{account}: {menu_items(st.page)[:8]}")
-            if target is None:
-                st.page.keyboard.press("Escape")
-                if st is not s:
-                    st.close()
-                continue
-            items.nth(target).click()
-            st.page.wait_for_timeout(1500)
-            if st.page.locator(".modal:visible").count():
-                dialog = st.page.locator(".modal:visible").last
-                yes = dialog.locator("button:visible", has_text=re.compile(r"Hủy|Cancel|Xác nhận|Yes|Có"))
-                if yes.count():
-                    yes.last.click()
-            cancel = screen_message(st, wait=6000)
-            if st is not s:
-                st.close()
-            break
-        # Không ai được cấp lệnh Hủy cũng là bất biến, nhưng phải nói rõ là giao diện đã không cho phép, không phải lỗi.
-        check(cancel is not None or not any("Hủy" in m or "Cancel" in m for m in cancel_seen),
-              "không đọc được thông báo chặn Hủy: " + " | ".join(cancel_seen))
+        s.step("PHƯƠNG kiểm tra menu ⋮ và xác nhận bảng lương đã ký không cho phép Hủy")
+        open_more(p)
+        items = p.locator(MENU_ITEMS)
+        has_cancel = any(re.search(r"^\s*(Hủy|Cancel)\s*$", items.nth(i).inner_text()) for i in range(items.count()))
+        p.keyboard.press("Escape")
+        p.wait_for_timeout(400)
+        # Thử hủy để kiểm tra guard bất biến của server
+        res = s.page.request.post(f"{BASE}/api/method/frappe.client.cancel",
+                                  data={"doctype": PE, "name": REQ["pe"]},
+                                  headers={"X-Frappe-CSRF-Token": csrf_token(s)})
+        check(res.status != 200, "Server không được cho phép hủy bảng lương đã ký")
+        cancel_message = res.json().get("exception", "") or res.json().get("_server_messages", "")
+        check("bất biến" in cancel_message.lower(), f"Hủy không bị chặn bằng báo lỗi bất biến: “{cancel_message[:200]}”")
         after = doc_state(s, PE, REQ["pe"])
         stored = api_get(s, f"/api/resource/{quote(PE)}/{quote(REQ['pe'])}").json()["data"]
-        cancel_message = cancel or "desk không hiện lệnh Hủy cho tài khoản nào đã thử (phuong, hoa, thanh)"
-        if cancel is not None:
-            check("bất biến" in cancel.lower(), f"Hủy không bị chặn bằng báo lỗi bất biến: “{cancel[:200]}”")
         check(after == SIGNED and stored["posting_date"] == (REQ.get("posting_date") or stored["posting_date"]),
               f"{after} · {stored['posting_date']}")
-        r["actual"] = f"{'ô bị khoá' if locked else message}; Hủy bị chặn: {cancel_message[:160]}; {after}"
+        r["actual"] = f"{'ô bị khoá' if locked else message}; menu không có lệnh Hủy ({not has_cancel}); server từ chối: {cancel_message[:120]}; {after}"
     s.close()
 
     # --------------------------------------------------------- PC-05 next-period adjustment voucher
@@ -1075,10 +1069,6 @@ def payroll_compliance_flow(browser):
         check(flt(settings["encrypt_salary_slips_in_emails"]) == 1 and (settings["password_policy"] or "").startswith("SAL-{first_name}"),
               f'{settings["encrypt_salary_slips_in_emails"]} · {settings["password_policy"]}')
         REQ["policy"] = settings["password_policy"]
-        # fixture: một lá thư chỉ đi được khi MỖI nhân viên của bảng lương có email ưu tiên, nên phủ đúng danh sách
-        # của bảng lương này (prepare_month chỉ lo bộ phận đã chọn, bảng lương có thể gồm người khác)
-        on_payroll = list_of(s, "Payroll Employee Detail", filters=[["parent", "=", REQ["pe"]]], fields=["employee"], limit=500)
-        ensure_emails(s, [x["employee"] for x in on_payroll])
         s.step("HR phát hành phiếu lương đã ký qua email mã hoá")
         open_form(s, PE, REQ["pe"])
         with p.expect_response(lambda res: "/api/method/tlc_hr.interface.payroll_compliance.deliver_payslips" in res.url,
@@ -1088,7 +1078,8 @@ def payroll_compliance_flow(browser):
             expect(dialog).to_be_visible()
             dialog.get_by_role("button", name=re.compile(r"^(Có|Yes)$")).last.click()
         response = issued.value
-        check(response.ok and not response.json().get("exc"), f"phát hành thất bại HTTP {response.status}")
+        if not (response.ok and not response.json().get("exc")):
+            raise AssertionError(f"phát hành thất bại HTTP {response.status}: {response.text()[:280]}")
         out = response.json()["message"]
         issued_message = screen_message(s, close=False)
         check(str(out["queued"]) in issued_message and ("hàng" in issued_message.lower() or "queue" in issued_message.lower()),

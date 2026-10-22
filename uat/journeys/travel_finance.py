@@ -1044,11 +1044,27 @@ def travel_finance_flow(browser):
         # Tạo 1 chuyến công tác mới trong tháng hiện tại chưa nộp báo cáo
         st_an = Session(browser, "UNREP", "an")
         login(st_an)
+        # chọn kỳ trống thật: lượt full đã có phép/tăng ca của An trong tháng, và luật chống trùng chặn đúng (fixture,
+        # không phải điều bị nghiệm thu — điều nghiệm thu ở đây là danh sách việc tồn của kỳ công)
+        first, last = working_day(2), working_day(3)
+        for k in range(1, 40):
+            first, last = working_day(k), working_day(k + 1)
+            overlap = [["employee", "=", an_emp_id]]
+            busy = (len(list_of(st_an, "Leave Application", filters=overlap + [["from_date", "<=", last], ["to_date", ">=", first]],
+                                fields=["name"], limit=5))
+                    + len(list_of(st_an, TR, filters=overlap + [["tlc_from_date", "<=", last], ["tlc_to_date", ">=", first]],
+                                  fields=["name"], limit=5))
+                    + len(list_of(st_an, "TLC Overtime Request", filters=overlap + [["ot_date", "between", [first, last]]],
+                                  fields=["name"], limit=5)))
+            if not busy:
+                break
+        else:
+            check(False, f"không tìm được hai ngày lịch trống cho {an_emp_id} trong 40 ngày làm việc tới")
         unrep_trip = api(st_an, "frappe.client.insert", doc=json.dumps({
             "doctype": TR, "company": company, "employee": an_emp_id, "travel_type": "Domestic",
             "purpose_of_travel": "TLC Công tác", "tlc_destination": "Nha Trang",
             "description": "Chuyến công tác chưa báo cáo để kiểm tra open items",
-            "tlc_from_date": working_day(2), "tlc_to_date": working_day(3),
+            "tlc_from_date": first, "tlc_to_date": last,
             "tlc_from_session": "AM", "tlc_to_session": "PM", "tlc_funded": 0}))["name"]
         api(st_an, "frappe.model.workflow.apply_workflow", doc=json.dumps({"doctype": TR, "name": unrep_trip}), action="Gửi duyệt")
         st_an.close()
