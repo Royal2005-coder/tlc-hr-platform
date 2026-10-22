@@ -1,8 +1,11 @@
-"""Native Desk recruitment journey; requires seed.recruitment.run on a fresh demo."""
+"""Native Desk recruitment journey: the two applications are opened on screen, HR accepts the applicant and clicks the
+native "Create Job Offer" button, fills the offer field by field, then the workflow moves through Hành động on each role's
+form. API is only used to read back what was stored after the person did the work."""
 
+import re
 from urllib.parse import quote
 
-from lib import BASE, REQ, Session, case, check, dt, expect, login, open_actions, re, MENU_ITEMS
+from lib import BASE, REQ, Session, case, check, dt, expect, login, open_actions, MENU_ITEMS
 
 
 CLEARED = "recruitment.candidate@demo.example"
@@ -27,44 +30,147 @@ def desk(s, doctype, name):
     s.page.wait_for_function("() => window.cur_frm && !cur_frm.is_new()")
 
 
-def save(page):
-    page.keyboard.press("Control+s")
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1200)
-
-
-def update(page):
-    # A submitted document with allow_on_submit fields is changed through the Update action, not a draft save.
-    page.evaluate("() => cur_frm.save('Update')")
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1500)
-
-
-def offer_form(s, applicant):
+def open_list_row(s, doctype, index=0, needle=None, note=None):
+    """Mở danh sách và nhấp đúng dòng như người dùng (không mở hồ sơ bằng URL)."""
     p = s.page
-    p.goto(f"{BASE}/desk/job-offer")
+    if note:
+        s.step(note)
+    p.goto(f"{BASE}/desk/{doctype.lower().replace(' ', '-')}")
     p.wait_for_load_state("networkidle")
-    # job_applicant is self-dependent in HRMS: it only shows once it has a value.
-    p.evaluate("(a) => frappe.new_doc('Job Offer', {job_applicant: a})", applicant)
-    p.wait_for_url(re.compile(r".*/job-offer/new-job-offer-.*"))
-    p.wait_for_function("() => window.cur_frm && cur_frm.doctype === 'Job Offer' && cur_frm.is_new()")
-    expect(field(p, "job_applicant")).to_be_visible()
+    p.wait_for_timeout(2200)
+    # the list header is also a .list-row-container in this build: keep only the data rows
+    rows = p.locator(".list-row-container").filter(has_not=p.locator(".list-row-head"))
+    check(rows.count() > 0, f"danh sách {doctype} không có dòng dữ liệu nào")
+    target = index
+    if needle:
+        target = next((i for i in range(rows.count()) if needle in " ".join(rows.nth(i).inner_text().split())), None)
+        check(target is not None, f"không thấy '{needle}' trong danh sách {doctype}: "
+                                  f"{[rows.nth(i).inner_text() for i in range(min(rows.count(), 5))]}")
+    check(target < rows.count(), f"danh sách {doctype} chỉ có {rows.count()} dòng")
+    row = rows.nth(target)
+    link = row.locator(".list-subject a, a").first
+    if link.count() and link.is_visible():
+        link.click()
+    else:
+        row.locator(".list-subject").first.click()
+    p.wait_for_function("(d) => window.cur_frm && cur_frm.doctype === d && !cur_frm.is_new()", arg=doctype, timeout=25000)
+    p.wait_for_timeout(1800)
+    return p
+
+
+def user_date(iso):
+    d = dt.date.fromisoformat(iso)
+    return d.strftime("%d-%m-%Y")
+
+
+def save_primary(page, label=r"Lưu|Save|Cập nhật|Update"):
+    """Click the form's own save button (not a keyboard shortcut); Escape first closes a link drop-down over it."""
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    page.locator(".page-head button:visible").filter(has_text=re.compile(label)).last.click()
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1800)
+
+
+def type_into(page, name, text):
+    box = page.locator(f"input[data-fieldname='{name}']:visible, textarea[data-fieldname='{name}']:visible").last
+    box.wait_for(state="visible", timeout=15000)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    box.click()
+    page.wait_for_timeout(400)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    if (box.get_attribute("data-fieldtype") or "") in ("Date", "Datetime", "Time"):
+        box.fill(str(text))  # typing character by character makes the date control store 'Invalid date'
+    else:
+        box.press_sequentially(str(text), delay=50)
+    page.keyboard.press("Tab")
+    page.wait_for_timeout(800)
+    if (box.input_value() or "").strip() != str(text).strip():
+        box.fill(str(text))
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(600)
+    if (box.input_value() or "").strip() != str(text).strip():
+        try:  # a currency input shows 25.000.000 while the document stores 25000000
+            if float(page.evaluate("f => cur_frm.doc[f]", name)) == float(text):
+                return
+        except Exception:
+            pass
+    check((box.input_value() or "").strip() == str(text).strip(),
+          f"ô {name} đang hiển thị '{(box.input_value() or '').strip()}', không nhận '{text}'")
+
+
+def pick_link(page, name, needle):
+    """A link field: type the value, then click the matching visible completion; Tab alone may leave the link empty."""
+    box = page.locator(f"input[data-fieldname='{name}']:visible").last
+    box.wait_for(state="visible", timeout=15000)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    box.click()
+    box.fill("")
+    box.press_sequentially(str(needle), delay=45)
+    page.wait_for_timeout(2200)
+    options = page.locator(".awesomplete li, ul[role=listbox] li, .ui-menu-item, [role=option], .frappe-control-dropdown li")
+    shown = [i for i in range(options.count()) if options.nth(i).is_visible()]
+    target = next((i for i in shown if str(needle).lower() in " ".join(options.nth(i).inner_text().split()).lower()), None)
+    if target is not None:
+        options.nth(target).click()
+        page.wait_for_timeout(1200)
+    else:
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(1000)
+    got = page.evaluate("f => cur_frm.doc[f] || ''", name)
+    check(str(got), f"ô {name} không nhận giá trị '{needle}' (đang là {got!r})")
+    return got
+
+
+def screen_text(page):
+    return " ".join(page.locator("body").inner_text().split())
+
+
+def create_offer(s, applicant):
+    """Open the application, record the hire decision with the native status field, then click Connect > Create Job Offer
+    (the native button appears once the applicant is Accepted). Fill the offer on its own form and save with Lưu."""
+    p = s.page
+    desk(s, "Job Applicant", applicant)
+    status = p.locator("select[data-fieldname='status']:visible").last
+    status.wait_for(state="visible", timeout=15000)
+    if status.input_value() != "Accepted":
+        status.select_option("Accepted")
+        p.wait_for_timeout(600)
+        save_primary(p)
+        p.wait_for_timeout(1500)
+    button = p.locator("button:visible").filter(has_text=re.compile(r"Create Job Offer|Tạo đề nghị|Tạo Offer", re.I))
+    check(button.count() > 0, f"không có nút Create Job Offer trên hồ sơ ứng viên: {screen_text(p)[:240]}")
+    button.last.click()
+    try:
+        p.wait_for_url(re.compile(r".*/job-offer/.*"), timeout=12000)
+    except Exception:
+        pass  # the button can open the new offer in place; the form itself is the proof, not the route
+    p.wait_for_function("() => window.cur_frm && cur_frm.doctype === 'Job Offer' && cur_frm.is_new()", timeout=30000)
     p.wait_for_load_state("networkidle")
-    field(p, "company").fill("TLC Demo")
-    field(p, "company").press("Tab")
-    field(p, "tlc_department").fill(REQ["recruitment_department"])
-    field(p, "tlc_department").press("Tab")
-    field(p, "offer_date").fill(dt.date.today().strftime("%d-%m-%Y"))
-    field(p, "tlc_joining_date").fill((dt.date.today() + dt.timedelta(days=14)).strftime("%d-%m-%Y"))
-    field(p, "tlc_salary").fill("25000000")
+    p.wait_for_timeout(1500)
+    check(p.evaluate("() => cur_frm.doc.job_applicant") == applicant,
+          f"offer không mang ứng viên {applicant} (đang là {p.evaluate('() => cur_frm.doc.job_applicant')})")
+    pick_link(p, "company", "TLC Demo")
+    type_into(p, "tlc_department", REQ["recruitment_department"])
+    today = dt.date.today()
+    type_into(p, "offer_date", user_date(today.isoformat()))
+    type_into(p, "tlc_joining_date", user_date((today + dt.timedelta(days=14)).isoformat()))
+    type_into(p, "tlc_salary", "25000000")
+    save_primary(p)
+    return p.evaluate("() => cur_frm.doc.name")
 
 
 def action(s, name, label):
     desk(s, "Job Offer", name)
     open_actions(s.page)
-    s.page.locator(MENU_ITEMS).filter(has_text=label).first.click()
+    item = s.page.locator(MENU_ITEMS).filter(has_text=label).first
+    check(item.count() > 0, f"không có {label} trong Hành động")
+    item.click()
     s.page.wait_for_load_state("networkidle")
-    s.page.wait_for_timeout(1200)
+    s.page.wait_for_timeout(1800)
 
 
 def recruitment_flow(browser):
@@ -72,28 +178,36 @@ def recruitment_flow(browser):
     try:
         login(s)
         with case(s, "TD-01", "Canonical candidate preserves applications", "Open two native Job Applicant forms",
-                  "Same normalized phone; different emails", "Same canonical candidate; separate application names"):
-            desk(s, "Job Applicant", CLEARED)
-            canonical = value(s.page, "tlc_candidate")
-            opening = s.page.evaluate("() => cur_frm.doc.job_title")
-            desk(s, "Job Applicant", UNCLEARED)
-            check(bool(canonical) and value(s.page, "tlc_candidate") == canonical,
+                  "Same normalized phone; different emails", "Same canonical candidate; separate application names") as r:
+            p = s.page
+            seen = {}
+            for index in (0, 1):
+                open_list_row(s, "Job Applicant", index=index,
+                              note=f"Chị Lan mở hồ sơ ứng viên thứ {index + 1} từ danh sách")
+                doc = p.evaluate("() => ({name: cur_frm.doc.name, email: cur_frm.doc.email_id, "
+                                 "canonical: cur_frm.doc.tlc_candidate, opening: cur_frm.doc.job_title})")
+                seen[doc["email"]] = doc
+            check(set(seen) == {CLEARED, UNCLEARED}, f"danh sách ứng viên: {seen}")
+            cleared, uncleared = seen[CLEARED], seen[UNCLEARED]
+            check(bool(cleared["canonical"]) and cleared["canonical"] == uncleared["canonical"],
                   "Applications do not resolve to the same canonical candidate")
-            desk(s, "Job Opening", opening)
+            check(cleared["name"] != uncleared["name"], "hai ứng viên phải là hai hồ sơ riêng")
+            REQ["cleared_applicant"], REQ["uncleared_applicant"] = cleared["name"], uncleared["name"]
+            desk(s, "Job Opening", cleared["opening"])
             REQ["recruitment_department"] = field(s.page, "department").input_value()
-            REQ["recruitment_opening"] = opening
-        with case(s, "TD-02", "Offer final-round gate", "New native Job Offer > choose uncleared application > Save",
+            REQ["recruitment_opening"] = cleared["opening"]
+            r["actual"] = (f"{CLEARED} và {UNCLEARED}: cùng candidate {cleared['canonical']}, "
+                           f"hai hồ sơ {cleared['name']} / {uncleared['name']}")
+        with case(s, "TD-02", "Offer final-round gate", "Open uncleared application > set Accepted > Lưu > Create Job Offer > fill and Lưu",
                   UNCLEARED, "Validation blocks offer before final round"):
-            offer_form(s, UNCLEARED)
-            save(s.page)
-            expect(s.page.locator(".modal:visible, .msgprint").last).to_contain_text("vòng cuối")
+            create_offer(s, REQ["uncleared_applicant"])
+            text = screen_text(s.page)
+            check("vòng cuối" in text, f"không đọc được lý do chặn trên màn hình: {text[-400:]}")
             s.page.keyboard.press("Escape")
-        with case(s, "TD-03", "Prepare offer for HR review", "Native Job Offer > cleared application > Save > Submit Offer",
+        with case(s, "TD-03", "Prepare offer for HR review", "Open cleared application > set Accepted > Lưu > Create Job Offer > fill > Lưu > Submit Offer",
                   CLEARED, "Draft persisted and sent to HR"):
-            offer_form(s, CLEARED)
-            save(s.page)
-            check("new-job-offer" not in s.page.url, "Offer was not saved")
-            name = s.page.url.rstrip("/").split("/")[-1]
+            name = create_offer(s, REQ["cleared_applicant"])
+            check("new-job-offer" not in name, f"Offer was not saved: {name} · {screen_text(s.page)[-240:]}")
             REQ["recruitment_offer"] = name
             action(s, name, "Submit Offer")
             expect(s.page.locator(".page-head")).to_contain_text("Recruitment HR Review")
@@ -119,22 +233,31 @@ def recruitment_flow(browser):
     try:
         login(s)
         with case(s, "TD-06", "Approved salary is locked", "Open approved native Job Offer", REQ["recruitment_offer"], "Salary is not editable"):
-            desk(s, "Job Offer", REQ["recruitment_offer"])
+            open_list_row(s, "Job Offer", index=0, note="Chị Lan mở danh sách đề nghị và nhấp đề nghị đã được duyệt")
+            check(s.page.evaluate("() => cur_frm.doc.name") == REQ["recruitment_offer"],
+                  f"mở nhầm đề nghị {s.page.evaluate('() => cur_frm.doc.name')}, cần {REQ['recruitment_offer']}")
             check(s.page.locator('.frappe-control[data-fieldname="tlc_salary"] input:visible:not([readonly]):not([disabled])').count() == 0,
                   "Approved salary remains editable")
-        with case(s, "TD-07", "Accepted offer consumes vacancy and opens onboarding", "Set Offer Stage Sent > Save; Status Accepted > Save; open native onboarding list",
+        with case(s, "TD-07", "Accepted offer consumes vacancy and opens onboarding", "Set Offer Stage Sent > Cập nhật; Status Accepted > Cập nhật; open native onboarding list",
                   REQ["recruitment_offer"], "Remaining headcount 1 and a native Employee Onboarding record"):
             field(s.page, "tlc_offer_stage").select_option("Sent")
-            update(s.page)
+            s.page.wait_for_timeout(500)
+            save_primary(s.page)
             field(s.page, "status").select_option("Accepted")
-            update(s.page)
+            s.page.wait_for_timeout(500)
+            save_primary(s.page)
             desk(s, "Job Opening", REQ["recruitment_opening"])
             # Read-only fields render formatted values, not necessarily inputs.
             expect(s.page.locator('.frappe-control[data-fieldname="tlc_remaining"] .control-value')).to_contain_text("1")
             s.page.goto(f"{BASE}/desk/employee-onboarding")
             s.page.wait_for_load_state("networkidle")
+            s.page.wait_for_timeout(2000)
             s.page.get_by_text("Ứng viên tuyển dụng TLC Demo", exact=True).first.click()
-            expect(field(s.page, "job_offer")).to_have_value(REQ["recruitment_offer"])
+            s.page.wait_for_function("() => window.cur_frm && cur_frm.doctype === 'Employee Onboarding'", timeout=25000)
+            s.page.wait_for_timeout(1500)
+            check(s.page.evaluate("() => cur_frm.doc.job_offer") == REQ["recruitment_offer"],
+                  f"onboarding mở ra không trỏ tới offer {REQ['recruitment_offer']}: "
+                  f"{s.page.evaluate('() => cur_frm.doc.job_offer')}")
     finally:
         s.close()
 

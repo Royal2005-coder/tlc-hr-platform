@@ -116,6 +116,7 @@ class Deck:
         for r in self.results:
             self.by_module[self.module_of.get(r["id"], "khác")].append(r)
         self.passed = sum(r["status"] == "Đạt" for r in self.results)
+        self.sources = data.get("source_runs") or {}
         self.tests = {}
 
     # ---------------------------------------------------------------- media registry
@@ -316,12 +317,14 @@ class Deck:
             pct = ok * 100 // len(rs)
             rows += (f'<tr><td>{E(title)}</td><td class="n">{len(rs)}</td><td class="n">{ok}</td>'
                      f'<td class="n {"ok" if real == len(rs) else "ko"}">{real}/{len(rs)}</td>'
-                     f'<td><div class="p-bar"><i style="width:{pct}%"></i></div></td></tr>')
+                     f'<td><div class="p-bar"><i style="width:{pct}%"></i></div></td>'
+                     f'<td><small>{E((self.sources.get(key) or {}).get("run", ""))}</small></td></tr>')
         roles = Counter(r["role"] for r in self.results)
         body = self.head("KẾT QUẢ NGHIỆM THU", f'<em>{self.passed}/{len(self.results)} ca đạt</em> — mỗi ca phải là '
                                                f'<em>thao tác thật trên giao diện</em> (đếm cú nhấp và phím trong trang), '
-                                               f'quay video desktop, dữ liệu reset trước khi chạy.') + \
-            f'<div class="grid g2"><div class="p-scroll"><table class="p-table"><thead><tr><th>Phân hệ</th><th>Ca</th><th>Đạt</th><th>Thao tác UI</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>' \
+                                               f'quay video desktop, dữ liệu reset trước khi chạy.'
+            + (f' Bảng dưới ghi rõ <em>lượt nào</em> chứng minh từng phân hệ.' if self.sources else "")) + \
+            f'<div class="grid g2"><div class="p-scroll"><table class="p-table"><thead><tr><th>Phân hệ</th><th>Ca</th><th>Đạt</th><th>Thao tác UI</th><th></th><th>Lượt chứng minh</th></tr></thead><tbody>{rows}</tbody></table></div>' \
             f'<div class="card"><h3>Ca theo người thực hiện</h3><table class="p-table">{"".join(f"<tr><td>{E(k)}</td><td class=n>{v}</td></tr>" for k, v in roles.most_common(14))}</table></div></div>'
         self.add("Kết quả UAT", "Nghiệm thu", body, foot=(f"Lượt {E(self.data['run'])} · image {E(str(self.data.get('image', '')))}", ""))
 
@@ -396,6 +399,76 @@ class Deck:
                 f'<div class="p-scroll tall"><table class="p-table p-cases"><thead><tr><th>Ca</th><th>Chức năng / bước</th><th>Mong đợi</th><th>Thực tế</th><th>KQ</th><th>Thao tác UI</th><th>Ảnh</th></tr></thead><tbody>{rows}</tbody></table></div>'
             self.add(f"Phụ lục · {title}", "Phụ lục", body, foot=("Cuộn trong bảng · bấm ▶ để xem đúng đoạn video · bấm ảnh để phóng to", ""))
 
+    # (role, groups, entry point, what they see and do, boundary, who grants)
+    PERMISSIONS = [
+        ("Công nhân · Nhân viên văn phòng", "Employee Self Service · TLC Self Service", "/hrms – App Frappe HR",
+         "Chấm công GPS tại cổng, xin nghỉ, trả lời đề nghị tăng ca, đề xuất công tác, xem phiếu lương và giấy tờ của mình, khảo sát ẩn danh",
+         "Chỉ thấy hồ sơ của chính mình; không thấy lương người khác; không duyệt được đơn mình đã tạo",
+         "HR đề xuất và ký danh sách vai trò theo chức danh; IT chỉ gán đúng phiếu đã duyệt"),
+        ("Trưởng nhà máy · Trưởng bộ phận", "TLC Line Manager", "Desk – workspace TLC Quản lý",
+         "Duyệt đơn của người thuộc quyền, chốt kỳ công nhà máy mình, danh sách chờ, công và lương trong phạm vi quản lý",
+         "User Permission giới hạn theo từng nhà máy; không sửa được workflow, quyền hay dữ liệu đã ký",
+         "HR duyệt phạm vi quản lý (nhà máy, phòng); IT áp giới hạn dữ liệu"),
+        ("Chuyên viên nhân sự", "HR User", "Desk – workspace TLC Nhân sự",
+         "Hồ sơ nhân sự, hợp đồng và người phụ thuộc, cấp và điều chỉnh phép, tăng ca, công tác, tạm ứng, tài sản, đào tạo",
+         "Không ký bảng lương, không sửa quyết định lương; không xóa được chứng từ đã submit",
+         "HR Lead phân công trong bộ phận; IT không tự thêm người vào nhóm nghiệp vụ"),
+        ("Chuyên viên tính lương", "TLC Payroll", "Desk – workspace TLC Tác nghiệp lương",
+         "Chạy Payroll Entry, lập phiếu lương, điều chỉnh giữa kỳ, báo cáo thuế, BHXH, sổ lao động",
+         "Không tự phê duyệt quyết định lương mình nhập; chỉ đọc phần đã được ký; trường lương ở permlevel 1",
+         "HR Lead đề xuất, IT gán quyền lương"),
+        ("Giám đốc nhân sự · HR Lead", "TLC HR Lead · HR Manager", "Desk – workspace TLC Nhân sự",
+         "Duyệt bậc hai mọi quy trình nhân sự, quyết định tăng lương, thưởng, điều chuyển, định biên, tuyển dụng",
+         "Không vào khu vực Quản trị kỹ thuật; không đổi cấu hình hệ thống, không xóa nhật ký",
+         "Là chủ quy trình nhân sự: mọi thay đổi quyền nghiệp vụ phải do người này ký đề nghị"),
+        ("Kế toán · Tài chính", "Accounts User · Accounts Manager", "Desk – workspace TLC Kế toán chi trả",
+         "Chi tạm ứng và lương bằng chứng từ ngân hàng, đối soát quyết toán, xác nhận đã nhận, khóa sổ thanh toán",
+         "Không sửa công thức lương hay workflow nhân sự; ghi nhận chứng từ, không duyệt nghỉ phép",
+         "HR xác nhận danh tính người nhận; IT gán tài khoản kế toán theo phiếu"),
+        ("Tổng giám đốc · CEO", "TLC Director", "Desk – workspace TLC Điều hành",
+         "Ký bảng lương, phê duyệt quyết định lương, thưởng, điều chuyển, duyệt tăng ca và công tác, xem gross/net toàn công ty, hộp thư ký",
+         "Chỉ đọc và phê chuẩn: không tạo hay sửa Salary Structure Assignment, không vào khu vực quản trị kỹ thuật",
+         "Không tự cấp quyền cho mình; quyền do HR đề nghị, IT thực thi"),
+        ("IT quản trị hệ thống", "System Manager · TLC Role Admin", "Desk – workspace TLC Quản trị kỹ thuật",
+         "User, Role, Level, quyền theo dữ liệu, import, backup, cấu hình YAML, theo dõi job và log",
+         "Không đổi luật lương hay quy trình nghiệp vụ ngoài phạm vi HR đã duyệt; không dùng quyền kỹ thuật để xem dữ liệu lương",
+         "Chỉ thực thi phiếu phân quyền HR đã ký; mọi thao tác lưu nhật ký hệ thống"),
+    ]
+
+    def matrix_rows(self):
+        """uat/role_matrix.yaml is the single source (the Outline page publishes the same table); the literal stays the fallback."""
+        catalogue = HERE / "role_matrix.yaml"
+        if not catalogue.is_file():
+            return self.PERMISSIONS
+        try:
+            import yaml
+            rows = [(r["role"], r["groups"], r["entry"], r["sees"], r["bounds"], r["grants"]) for r in yaml.safe_load(catalogue.read_text(encoding="utf-8"))]
+        except Exception:
+            return self.PERMISSIONS
+        return rows or self.PERMISSIONS
+
+    def permissions_slide(self):
+        rows = "".join(
+            f'<tr><td><b>{E(role)}</b><small>{E(perms)}</small></td><td>{E(entry)}</td><td>{E(sees)}</td>'
+            f'<td>{E(bounds)}</td><td><small>{E(grants)}</small></td></tr>'
+            for role, perms, entry, sees, bounds, grants in self.matrix_rows())
+        matrix = self.data.get("matrix") or {}
+        measured = ", ".join(sorted(matrix)) or "—"
+        body = self.head("PHÂN QUYỀN VÀ ĐIỂM VÀO",
+                         "Mỗi vai trò <em>một chỗ vào</em>, thấy <em>đúng việc của mình</em>, và <em>không ai tự cấp quyền</em>.") + \
+            '<div class="p-scroll"><table class="p-table p-perm"><thead><tr><th>Vai trò</th><th>Điểm vào</th>' \
+            f'<th>Thấy và làm</th><th>Ranh giới</th><th>Ai cấp quyền</th></tr></thead><tbody>{rows}</tbody></table></div>' + \
+            '<div class="grid g3"><div class="card"><h3>Quy tắc phân quyền</h3><p>' \
+            'Nhân sự là <b>chủ quy trình nghiệp vụ</b>: HR Lead đề xuất và ký phiếu thêm hoặc bớt vai trò theo chức danh. ' \
+            'IT System Manager <b>chỉ thực thi</b> phiếu đã duyệt, không tự sáng tạo quyền, không dùng quyền kỹ thuật để đọc dữ liệu lương.</p></div>' \
+            '<div class="card"><h3>Bất biến</h3><p>Không ai tự duyệt việc của mình. Lương và quyết định lương là dữ liệu nhạy cảm (permlevel 1). ' \
+            'Chứng từ đã submit không sửa xóa được, chỉ điều chỉnh bằng chứng từ mới có nhật ký. Kỳ công đã khóa thì lương chỉ tính lại bằng điều chỉnh.</p></div>' \
+            f'<div class="card"><h3>Một điểm vào</h3><p>Tài khoản thật đã đo trong lượt UAT: <b>{E(measured)}</b>. ' \
+            'App <b>TLC HRM</b> mở đúng trang /desk/tlc-hr cho người nghiệp vụ, Frappe HR (/hrms) cho công nhân và nhân viên; ' \
+            'icon TLC HR trùng trong App Switcher đã bỏ nên mỗi vai trò chỉ còn một nơi bắt đầu.</p></div></div>'
+        self.add("Phân quyền", "Quản trị", body,
+                 foot=("Ranh giới do DocPerm, User Permission và validate ở server kiểm soát, không phải ẩn nút trên giao diện", ""))
+
     def build(self):
         self.cover()
         self.pains()
@@ -403,6 +476,7 @@ class Deck:
         self.architecture()
         self.domain_map()
         self.role_slides()
+        self.permissions_slide()
         self.module_slides()
         self.results_slide()
         self.coverage_slide()

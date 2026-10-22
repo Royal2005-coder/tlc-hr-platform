@@ -32,8 +32,12 @@ python3 "$HERE/offline_html.py" "$OUT"
 # 4. bản bàn giao
 D=$HOME/tlc-hr/deliverables
 mkdir -p "$D"
-cp "$DECK" "$OUT/UAT_TLC_HRM_${RUN}_offline.html" "$OUT/UAT_TLC_HRM_${RUN}.xlsx" "$OUT/results.json" "$D"/
-cp "$OUT/results.json" "$D/results_${RUN}.json"   # giu bang ket qua cua tung luot, khong de luot sau ghi de luot truoc
+if [ -f "$D/results.json" ] && [ ! -f "$D/results_20261021-2056.json" ]; then
+  cp -p "$D/results.json" "$D/results_20261021-2056.json"
+fi
+cp "$DECK" "$OUT/UAT_TLC_HRM_${RUN}_offline.html" "$OUT/UAT_TLC_HRM_${RUN}.xlsx" "$D"/
+cp "$OUT/results.json" "$D/results_${RUN}.json"
+cp "$OUT/results.json" "$D/results.json"
 echo "== $D"
 ls -la "$D" | awk 'NR>2 {print $5, $9}'
 grep -c "fonts.googleapis\|fonts.gstatic" "$DECK" | sed 's/^/lien ket mang con lai trong deck: /'

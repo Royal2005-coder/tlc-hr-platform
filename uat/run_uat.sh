@@ -1,6 +1,7 @@
 #!/bin/sh
 # Run the end-to-end UAT of TLC HRM in the Playwright container against the site on this node, then refresh the evidence index.
 # Usage: ~/tlc-hr/uat/run_uat.sh [--reset]   --reset deletes every demo leave and overtime request first (expected numbers assume a clean demo)
+# Debug knobs: ONLY=<module> runs one module (resets first), SLOW_MO=<ms> paces the clicks, QUICK=1 skips the MP4 and offline pack of a throwaway run.
 set -eu
 export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -23,24 +24,37 @@ DEMO_PASSWORD=$(kubectl -n tlc-hr get secret tlc-hr -o jsonpath='{.data.demo-pas
 # A locally baked image with playwright/openpyxl avoids a PyPI stall on every run; fall back to the upstream image.
 UAT_IMAGE=${TLC_UAT_IMAGE:-tlc-uat:1.49}
 docker image inspect "$UAT_IMAGE" >/dev/null 2>&1 || UAT_IMAGE=mcr.microsoft.com/playwright/python:v1.49.0-noble
-RUN_ID=$(date +%Y%m%d-%H%M)
+if [ -z "${RUN_ID:-}" ]; then
+  RUN_ID=$(date +%Y%m%d-%H%M)
+  if [ -d "$HERE/out/$RUN_ID" ]; then
+    RUN_ID=$(date +%Y%m%d-%H%M%S)
+  fi
+fi
 IMAGE_TAG=$(awk '/newTag:/{print $2}' "$HERE/../deploy/k8s/kustomization.yaml")
 mkdir -p "$HERE/out"
 mkdir -p /tmp/tlc-pip-cache
-docker run --rm --network host --ipc=host -e DEMO_PASSWORD="$DEMO_PASSWORD" -e RUN_ID="$RUN_ID" -e IMAGE_TAG="$IMAGE_TAG" -e ONLY="${ONLY:-}" -e TZ=Asia/Ho_Chi_Minh \
+# The password goes to the container in a 0600 file, never in argv: `ps` on this host used to print it.
+ENVF=$(mktemp)
+chmod 600 "$ENVF"
+printf 'DEMO_PASSWORD=%s\n' "$DEMO_PASSWORD" > "$ENVF"
+trap 'rm -f "$ENVF"' EXIT
+docker run --rm --network host --ipc=host --env-file "$ENVF" -e RUN_ID="$RUN_ID" -e IMAGE_TAG="$IMAGE_TAG" -e ONLY="${ONLY:-}" \
+  -e SLOW_MO="${SLOW_MO:-250}" -e TZ=Asia/Ho_Chi_Minh \
   -v "$HERE:/uat" -v /tmp/tlc-pip-cache:/root/.cache/pip -w /uat "$UAT_IMAGE" \
   sh -c "pip install -q --root-user-action=ignore playwright==1.49.0 openpyxl==3.1.5 2>/dev/null; python run_uat.py; RC=\$?; rm -rf /uat/out/$RUN_ID/videos/raw; chown -R $(id -u):$(id -g) /uat/out/$RUN_ID; exit \$RC" || STATUS=$?
-# Playwright WebM has no index (players cannot seek): an H.264 MP4 copy of each video, small and seekable.
-docker run --rm --user "$(id -u):$(id -g)" -v "$HERE/out/$RUN_ID/videos:/v" --entrypoint sh jrottenberg/ffmpeg:6.1-ubuntu -c \
-  'for f in /v/*.webm; do ffmpeg -loglevel error -y -i "$f" -c:v libx264 -preset veryfast -crf 30 -pix_fmt yuv420p \
-   -movflags +faststart -an "${f%.webm}.mp4"; done' || true
-# The same run packed into one HTML file (cases, screenshots, videos, Excel) to send and open offline.
-python3 "$HERE/offline_html.py" "$HERE/out/$RUN_ID" || true
+if [ -z "${QUICK:-}" ]; then
+  # Playwright WebM has no index (players cannot seek): an H.264 MP4 copy of each video, small and seekable.
+  docker run --rm --user "$(id -u):$(id -g)" -v "$HERE/out/$RUN_ID/videos:/v" --entrypoint sh jrottenberg/ffmpeg:6.1-ubuntu -c \
+    'for f in /v/*.webm; do ffmpeg -loglevel error -y -i "$f" -c:v libx264 -preset veryfast -crf 30 -pix_fmt yuv420p \
+     -movflags +faststart -an "${f%.webm}.mp4"; done' || true
+  # The same run packed into one HTML file (cases, screenshots, videos, Excel) to send and open offline.
+  python3 "$HERE/offline_html.py" "$HERE/out/$RUN_ID" || true
+fi
 # Index of every run, newest first.
 {
   echo '<!doctype html><html lang="vi"><meta charset="utf-8"><title>UAT TLC HRM</title><body style="font:16px system-ui;max-width:800px;margin:32px auto">'
   echo '<h1>Bằng chứng UAT TLC HRM</h1><ul>'
-  for d in $(ls -1r "$HERE/out" | grep -E '^[0-9]{8}-[0-9]{4}$'); do
+  for d in $(ls -1r "$HERE/out" | grep -E '^[0-9]{8}-[0-9]{4}([0-9]{2})?$'); do
     SUMMARY=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); r=d['results']; print(sum(x['status']=='Đạt' for x in r), '/', len(r), 'đạt')" "$HERE/out/$d/results.json" 2>/dev/null || echo "chưa xong")
     echo "<li><a href=\"$d/index.html\">$d</a> - $SUMMARY</li>"
   done

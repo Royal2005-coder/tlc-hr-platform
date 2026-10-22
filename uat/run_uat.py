@@ -16,7 +16,7 @@ from lib import ACCOUNTS, BASE, EXPECTED_SECTIONS, MATRIX, OUT, RESULTS, RUN_ID,
 
 # Run order: later modules use what earlier ones leave behind (approved leave, locked periods, payroll ...).
 MODULES = ["leave", "overtime", "attendance", "payroll", "payroll_compliance", "travel_finance", "organization", "recruitment",
-           "lifecycle", "people_ops", "services", "survey", "role_experience"]
+           "lifecycle", "people_ops", "services", "survey", "role_experience", "roles"]
 
 
 def write_outputs():
@@ -34,18 +34,26 @@ def main():
     only = [m for m in os.environ.get("ONLY", "").split(",") if m]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(slow_mo=SLOW_MO)
+        failed_scenarios = []
         for module in only or MODULES:
             for journey in importlib.import_module(f"journeys.{module}").JOURNEYS:
+                first_row = len(RESULTS)
                 try:
                     journey(browser)
-                except Exception as exc:
-                    print("SCENARIO ERROR", module, journey.__name__, exc, flush=True)
+                except Exception as error:
+                    print("SCENARIO ERROR", module, journey.__name__, error, flush=True)
                     traceback.print_exc()
+                    failed_scenarios.append((module, journey.__name__, str(error)))
+                for row in RESULTS[first_row:]:
+                    row["module"] = module
         browser.close()
     write_outputs()
     passed = sum(1 for r in RESULTS if r["status"] == "Đạt")
     print(f"UAT {RUN_ID}: {passed}/{len(RESULTS)} đạt", flush=True)
-    return 0 if passed == len(RESULTS) else 1
+    if failed_scenarios:
+        print(f"SCENARIOS FAILED ({len(failed_scenarios)}): {failed_scenarios}", flush=True)
+        return 1
+    return 0 if (passed == len(RESULTS) and len(RESULTS) > 0) else 1
 
 
 if __name__ == "__main__":
