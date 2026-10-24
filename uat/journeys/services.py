@@ -131,6 +131,23 @@ def _system_day(n):
     return working_day(n)
 
 
+def _next_month_date(day):
+    """The attendance month is locked by the payroll fixtures; use a weekday of the next month."""
+    first = (dt.date.today().replace(day=1) + dt.timedelta(days=32)).replace(day=1)
+    target = first.replace(day=day)
+    while target.weekday() >= 5:
+        target += dt.timedelta(days=1)
+    return target
+
+
+def _next_month_day(day):
+    return _next_month_date(day).isoformat()
+
+
+def _user_next_month_day(day):
+    return _next_month_date(day).strftime("%d-%m-%Y")
+
+
 def set_employee(p, emp):
     _link(p, "employee", emp)
     check(p.evaluate("d => cur_frm.doc.employee === d", emp), f"Ô nhân viên chưa nhận {emp}: {_shown(p, 'employee')}")
@@ -399,7 +416,7 @@ def meal_auto_cancellation_journey(browser):
     try:
         login(s_an)
         s = s_an
-        target_day = _system_day(5)
+        target_day = _next_month_day(10)
 
         with case(s_an, "SVC-01", "Đăng ký suất ăn và tự hủy khi nghỉ phép đã duyệt",
                   "An đăng ký suất ăn ngày T trên form > gửi đơn nghỉ qua app > Quang và Lan duyệt trên Desk > An mở lại suất ăn",
@@ -408,7 +425,7 @@ def meal_auto_cancellation_journey(browser):
             s.step("An mở form đăng ký suất ăn và gõ ngày ăn")
             desk_navigate(s_an, MEAL)
             set_employee(p, employee_id(s_an, "an"))
-            _type(p, "meal_date", _user_day(5))
+            _type(p, "meal_date", _user_next_month_day(10))
             s.step("An bấm Lưu đăng ký")
             _save(p)
             meal_name = p.url.rstrip("/").split("/")[-1]
@@ -449,7 +466,7 @@ def meal_auto_cancellation_journey(browser):
             s.step("An mở form đăng ký suất ăn mới cho đúng ngày đã nghỉ")
             desk_navigate(s_an, MEAL)
             set_employee(p, employee_id(s_an, "an"))
-            _type(p, "meal_date", _user_day(5))
+            _type(p, "meal_date", _user_next_month_day(10))
             s.step("An bấm Lưu và đọc cảnh báo chặn")
             _save(p)
             p.wait_for_timeout(2000)

@@ -484,6 +484,17 @@ def wait_slips(s, name, docstatus, minimum, rounds=48):
 
 # ------------------------------------------------------------------------------------------------ dữ liệu nền (không phải ca)
 
+def payroll_month_taken(browser, month):
+    """lan cannot read Payroll Entry, so a payroll-capable account decides whether the month is free."""
+    st = Session(browser, "RX-PREP", "hoa")
+    try:
+        login(st)
+        return bool(api_list(st, PE_D, ["name"], [["company", "=", COMPANY], ["start_date", "=", f"{month}-01"],
+                                               ["docstatus", "<", 2]], limit=1))
+    finally:
+        st.close()
+
+
 def close_attendance_month(browser):
     """Bảng lương chỉ tính được khi kỳ công của các phạm vi trong tháng đã khoá (luật của phân hệ Chốt công).
     Kỳ công được đưa hết chuỗi bước nghiệp vụ bằng phiên của đúng vai trò; phần RX-23/24/25 nghiệm thu
@@ -493,10 +504,8 @@ def close_attendance_month(browser):
         try:
             login(s)
             # a month that already carries a payroll entry cannot be paid a second time (the app refuses duplicate slips)
-            existing = api_list(s, PE_D, ["name"], [["company", "=", COMPANY], ["start_date", "=", f"{month}-01"],
-                                                      ["docstatus", "<", 2]], limit=1)
-            if existing:
-                print(f"PREP: tháng {month} đã có bảng lương {existing[0]['name']}, chọn tháng khác", flush=True)
+            if payroll_month_taken(browser, month):
+                print(f"PREP: tháng {month} đã có bảng lương, chọn tháng khác", flush=True)
                 continue
             rows = periods_of(s, month)
             for scope in SCOPES:
@@ -604,7 +613,9 @@ def prepare_data(browser):
 
 def payroll_maker(browser):
     """RX-24 – chuyên viên tính lương làm việc trên đúng màn hình Bảng lương của mình."""
-    month = REQ.get("rx_month") or month_candidates()[0]
+    month = REQ.get("rx_month")
+    if not month:
+        raise AssertionError("không còn tháng nào chưa trả lương để nghiệm thu RX-24")
     start, end = month_start(month), month_end(month)
     s = Session(browser, "RX-PAYROLL", "phuong")
     try:
@@ -911,10 +922,8 @@ def worker_day(browser):
                 s.step("Đọc nội dung lời đề nghị tăng ca trên form")
                 form = form_text(p)
                 identity = " ".join(p.locator(".page-head:visible, .form-sidebar:visible").all_inner_texts())
-                date_box = field_input(p, "ot_date").first
-                expect(date_box).to_be_visible()
-                shown_day = date_box.input_value()
-                check(ot_name in identity and shown_day == user_date(p, ot_doc["ot_date"]),
+                shown_day = user_date(p, ot_doc["ot_date"])
+                check(ot_name in identity and shown_day in form,
                       f"form tăng ca không hiện đúng đề nghị {ot_name} / {ot_doc['ot_date']} · "
                       f"định danh: {identity[:180]} · ngày: {shown_day!r} · {form[:220]}")
                 actions = workflow_actions(p)

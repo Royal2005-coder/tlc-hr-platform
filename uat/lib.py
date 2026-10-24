@@ -229,6 +229,16 @@ def csrf_token(s):
     return token
 
 
+def list_of(s, doctype, filters=None, fields=None, limit=0):
+    """Read a resource list as the logged-in session (GET; no CSRF needed)."""
+    from urllib.parse import quote, urlencode
+    params = {"fields": json.dumps(fields or ["name"]), "limit_page_length": limit or 0}
+    if filters:
+        params["filters"] = json.dumps(filters)
+    res = s.page.request.get(f"{BASE}/api/resource/{quote(doctype)}?" + urlencode(params))
+    return res.json().get("data", [])
+
+
 def api(s, method, **params):
     res = s.page.request.post(f"{BASE}/api/method/{method}", form=params,
                               headers={"X-Frappe-CSRF-Token": csrf_token(s)})
