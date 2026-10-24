@@ -1,6 +1,22 @@
 [
-  {"url": "https://github.com/frappe/erpnext", "branch": "version-16"},
-  {"url": "https://github.com/Royal2005-coder/hrms", "branch": "tlc/version-16"},
-  {"url": "https://github.com/Royal2005-coder/erpnextvn", "branch": "tlc/main"},
-  {"url": "https://github.com/Royal2005-coder/tlc_hr", "branch": "main"}
+  {
+    "url": "https://github.com/frappe/erpnext",
+    "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/Royal2005-coder/hrms",
+    "branch": "tlc/version-16"
+  },
+  {
+    "url": "https://github.com/Royal2005-coder/erpnextvn",
+    "branch": "tlc/main"
+  },
+  {
+    "url": "https://github.com/Royal2005-coder/tlc_hr",
+    "branch": "main"
+  },
+  {
+    "url": "https://github.com/frappe/raven",
+    "branch": "v3.0.0"
+  }
 ]

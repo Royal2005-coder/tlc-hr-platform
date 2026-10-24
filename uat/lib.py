@@ -39,6 +39,7 @@ ACCOUNTS = {
     "chi": {"name": None, "role": "Hỗ trợ - Kế toán (xác nhận chi)", "workforce": "Hội sở", "approver": None},
     "quang": {"name": "Trần Minh Quang", "role": "Hỗ trợ - Trưởng phòng Kinh doanh hội sở", "workforce": "Hội sở", "approver": "Nguyễn Văn Thành"},
     "thanh": {"name": "Nguyễn Văn Thành", "role": "CEO hội sở - Tổng giám đốc", "workforce": "Hội sở", "approver": None},
+    "admin": {"name": "Quản trị TLC", "role": "Quản trị hệ thống (demo)", "workforce": "Hội sở", "approver": None},
 }
 # Functional matrix: where each account works and what it may do (checked through the landing page and the API).
 SECTIONS = ["hrms", "ws_manager", "ws_hr", "ws_ceo", "approve", "company"]
@@ -211,9 +212,15 @@ def csrf_token(s):
     if not token:
         page = s.context.new_page()
         try:
-            page.goto(f"{BASE}/desk", wait_until="domcontentloaded")
-            page.wait_for_function("() => window.frappe && frappe.csrf_token")
-            token = page.evaluate("frappe.csrf_token")
+            try:
+                page.goto(f"{BASE}/desk", wait_until="domcontentloaded", timeout=15000)
+                page.wait_for_function("() => window.frappe && frappe.csrf_token", timeout=8000)
+                token = page.evaluate("frappe.csrf_token")
+            except Exception:
+                page.goto(f"{BASE}/hrms", wait_until="domcontentloaded")
+                import re as _re
+                match = _re.search(r'csrf_token = "([a-f0-9]+)"', page.content())
+                token = match.group(1) if match else ""
         finally:
             page.close()
         s._csrf_token = token

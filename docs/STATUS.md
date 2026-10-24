@@ -80,3 +80,12 @@ FRP-06 build image (Todo) · FRP-07 deck+Outline+Plane (In Progress) · FRP-08 G
 Không drop/tạo lại MariaDB, namespace `tlc-hr`, site `tlc-hr.local`, Secret nào. Không xoá/sửa
 `out/20261021-2056/` và `~/tlc-hr/deliverables/` (bằng chứng đang chia sẻ). Không sửa `results.json`/ảnh/video.
 Chỉ dùng `tlc seed reset-*`. Không in bí mật. Không build/clone trên laptop (ổ C: còn 4,2 GB).
+
+## W7 — Trợ lý Raven + Mistral (2026-10-24)
+
+- Raven v3.0.0 pin trong ; image  (nền , thêm shim message Mistral).
+- Secret ;  và  trong backend/worker/scheduler;  chỉ dùng cho lần configure.
+- Bot **TLC Demo HR Assistant**: Mistral  (key demo bị 0 req/phút với ), tool  và , 13 kênh DM cho các persona demo.
+- Provider smoke đã gọi Mistral thật và thực thi tool. Chat Raven thật trả hồ sơ HR-EMP-00019 của binh. UAT trợ lý **6/6** (run ).
+- An toàn: chỉ đọc dữ liệu của chính mình và tạo nháp nghỉ phép; không có tool duyệt, lương, đóng kỳ, đổi quyền; chỉ DM AI, chặn file/kênh chung; job AI được ghi thread của chính nó sau khi message gốc đã qua guard.
+- UAT hồi quy các module từng lỗi ngày 22/10 đang chạy trên image mới; kết quả đầy đủ sẽ thay dòng này khi hoàn tất.
