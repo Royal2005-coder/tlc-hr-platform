@@ -83,9 +83,9 @@ Chỉ dùng `tlc seed reset-*`. Không in bí mật. Không build/clone trên la
 
 ## W7 — Trợ lý Raven + Mistral (2026-10-24)
 
-- Raven v3.0.0 pin trong ; image  (nền , thêm shim message Mistral).
-- Secret ;  và  trong backend/worker/scheduler;  chỉ dùng cho lần configure.
-- Bot **TLC Demo HR Assistant**: Mistral  (key demo bị 0 req/phút với ), tool  và , 13 kênh DM cho các persona demo.
-- Provider smoke đã gọi Mistral thật và thực thi tool. Chat Raven thật trả hồ sơ HR-EMP-00019 của binh. UAT trợ lý **6/6** (run ).
+- Raven v3.0.0 pin trong `apps.json`; image `b97aba6-202610241550` (nền `abd15a53`, thêm shim message Mistral).
+- Secret `tlc-hr-ai/mistral-api-key`; `MISTRAL_API_KEY` và `OPENAI_AGENTS_DISABLE_TRACING=1` trong backend/worker/scheduler; `TLC_AI_DEMO_ACK=synthetic-only` chỉ dùng cho lần configure.
+- Bot **TLC Demo HR Assistant**: Mistral `ministral-14b-latest` (key demo bị 0 req/phút với `mistral-small/medium`), tool `tlc_hr_query` và `tlc_hr_draft_leave`, 13 kênh DM cho các persona demo.
+- Provider smoke đã gọi Mistral thật và thực thi tool. Chat Raven thật trả hồ sơ HR-EMP-00019 của binh. UAT trợ lý **6/6** (run `20261024-1553`).
 - An toàn: chỉ đọc dữ liệu của chính mình và tạo nháp nghỉ phép; không có tool duyệt, lương, đóng kỳ, đổi quyền; chỉ DM AI, chặn file/kênh chung; job AI được ghi thread của chính nó sau khi message gốc đã qua guard.
 - UAT hồi quy các module từng lỗi ngày 22/10 đang chạy trên image mới; kết quả đầy đủ sẽ thay dòng này khi hoàn tất.
