@@ -280,7 +280,7 @@ def first_case(s, case_id):
         roles = set(p.evaluate("(window.frappe && frappe.user_roles) || []")) if not url.startswith("/hrms") else set()
         if roles.intersection({"Leave Approver", "TLC HR Lead", "TLC HR Officer"}):
             shown.add("approve")
-        if len(api_get(s, "/api/resource/Employee?limit_page_length=500").json().get("data", [])) == 60:
+        if len(api_get(s, "/api/resource/Employee?limit_page_length=500").json().get("data", [])) >= 60:
             shown.add("company")
         MATRIX[s.account] = [k for k in SECTIONS if k in shown]
         check(shown == expected, f"vào {url}; quyền {sorted(shown)}")

@@ -1106,7 +1106,7 @@ def payroll_compliance_flow(browser):
               "sau đó đối chiếu ba luồng xuất luật định (nội dung file xuất là trả lời của server, desk chưa có nút — xem GAPS)",
               f'TLC Demo · 01-01-{plan["month"][:4]} → {vn(plan["end"])}',
               "Báo cáo trên màn hình có mặt nhân viên đã tính lương với thuế TNCN; export PIT đúng số người phụ thuộc đã kiểm tra, "
-              "sổ quản lý lao động đủ 60 nhân viên, D02-LT có bản ghi của tháng lương") as r:
+              "sổ quản lý lao động đủ số nhân viên đang làm việc, D02-LT có bản ghi của tháng lương") as r:
         s.step("GIÁM ĐỐC NHÂN SỰ mở báo cáo lương có cột thuế TNCN và nhập kỳ quyết toán")
         # The packaged VN tax report cannot be imported on this build (diacritic module path); the standard Salary
         # Register prints the Thuế TNCN column per employee, which is the evidence this case needs on screen.
@@ -1129,8 +1129,9 @@ def payroll_compliance_flow(browser):
         bhxh = native_data(s, "Xuất BHXH D02-LT", "export_bhxh_d02lt", "Xuất tệp",
                            {"month": plan["month"]}, download=True)
         mine = [x for x in pit["records"] if x.get("employee") == plan["employee"]]
-        check(int(reg["total_employees"]) == 60 and mine and bhxh.get("records") is not None,
-              f'PIT {len(pit["records"])}, sổ {reg["total_employees"]}, D02-LT {len(bhxh.get("records") or [])}')
+        roster = len(list_of(s, "Employee", filters={"company": COMPANY, "status": "Active"}, fields=["name"], limit=500))
+        check(int(reg["total_employees"]) == roster and mine and bhxh.get("records") is not None,
+              f'PIT {len(pit["records"])}, sổ {reg["total_employees"]}/{roster}, D02-LT {len(bhxh.get("records") or [])}')
         slip = api_get(s, f"/api/resource/Salary Slip/{quote(REQ['slip'])}").json()["data"]
         check(int(mine[0].get("dependents", -1)) == int(flt(slip.get("tlc_effective_dependents"))),
               f'người phụ thuộc {mine[0]} ≠ phiếu {slip.get("tlc_effective_dependents")}')
