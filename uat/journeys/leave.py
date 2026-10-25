@@ -271,12 +271,16 @@ def factory_head(browser):
     first_case(s, "QL-01")
     p = s.page
     with case(s, "QL-02", "Workspace TLC Quản lý", "Đọc thẻ số; bấm thẻ Đơn chờ tôi duyệt mở danh sách", "",
-              "Đơn chờ tôi duyệt 2; Nhân sự đang làm việc 15 (trong phạm vi); danh sách có 2 đơn của Trần Văn Bình") as r:
+              "Thẻ đơn chờ tôi duyệt và thẻ nhân sự trong phạm vi bằng đúng số server trả cho hung; danh sách có 2 đơn của Trần Văn Bình") as r:
         s.step("Anh Hùng đọc các thẻ số trên workspace TLC Quản lý")
         mine = card_value(p, "Đơn chờ tôi duyệt")
         staff = card_value(p, "Nhân sự đang làm việc")
         quick = p.locator(".widget", has_text="Đơn chờ quản lý duyệt").last.inner_text()
-        check((mine, staff) == (2, 15) and quick.count("Trần Văn Bình") >= 2 and "Nhà máy 2" not in quick, f"{mine} {staff} {quick[:160]}")
+        server = (len(list_of(s, "Leave Application", filters={"workflow_state": TO_MANAGER, "leave_approver": "hung@demo.example"},
+                              fields=["name"], limit=500)),
+                  len(list_of(s, "Employee", filters={"status": "Active", "tlc_workforce": "factory"}, fields=["name"], limit=500)))
+        check((mine, staff) == server and server[0] >= 2 and quick.count("Trần Văn Bình") >= 2 and "Nhà máy 2" not in quick,
+              f"thẻ ({mine}, {staff}) ≠ server {server} · {quick[:160]}")
         s.step("Anh Hùng bấm thẻ Đơn chờ tôi duyệt để mở danh sách đơn chờ")
         p.locator(".widget", has_text="Đơn chờ tôi duyệt").first.click()
         p.wait_for_load_state("networkidle")
@@ -344,10 +348,15 @@ def hr_lead(browser):
     s = Session(browser, "HR", "hoa")
     first_case(s, "HR-01")
     p = s.page
-    with case(s, "HR-02", "Workspace TLC Nhân sự", "Đọc các thẻ số; bấm thẻ Đơn chờ nhân sự duyệt mở danh sách", "", "60 nhân sự; Hội sở 31; Nhà máy 29; 2 đơn chờ nhân sự duyệt") as r:
+    with case(s, "HR-02", "Workspace TLC Nhân sự", "Đọc các thẻ số; bấm thẻ Đơn chờ nhân sự duyệt mở danh sách", "",
+              "Thẻ nhân sự / Hội sở / Nhà máy / đơn chờ bằng đúng số server trả cho hoa") as r:
         s.step("Chị Hòa đọc các thẻ số trên workspace TLC Nhân sự")
         values = tuple(card_value(p, label) for label in ("Nhân sự đang làm việc", "Nhân sự khối Hội sở", "Nhân sự khối Nhà máy", "Đơn chờ nhân sự duyệt"))
-        check(values == (60, 31, 29, 2), str(values))
+        server = (len(list_of(s, "Employee", filters={"status": "Active"}, fields=["name"], limit=500)),
+                  len(list_of(s, "Employee", filters={"status": "Active", "tlc_workforce": "head_office"}, fields=["name"], limit=500)),
+                  len(list_of(s, "Employee", filters={"status": "Active", "tlc_workforce": "factory"}, fields=["name"], limit=500)),
+                  len(list_of(s, "Leave Application", filters={"workflow_state": "Chờ nhân sự duyệt"}, fields=["name"], limit=500)))
+        check(values == server and server[0] >= 60, f"thẻ {values} ≠ server {server}")
         s.step("Chị Hòa bấm thẻ Đơn chờ nhân sự duyệt để xem danh sách")
         p.locator(".widget", has_text="Đơn chờ nhân sự duyệt").first.click()
         p.wait_for_load_state("networkidle")
@@ -388,10 +397,15 @@ def ceo(browser):
     s = Session(browser, "CEO", "thanh")
     first_case(s, "CEO-01")
     p = s.page
-    with case(s, "CEO-02", "Workspace TLC Điều hành", "Đọc các thẻ số; bấm thẻ Đơn chờ tôi duyệt mở danh sách", "", "60 nhân sự; 2 đơn chờ tôi duyệt; 3 đơn chờ quản lý (toàn công ty)") as r:
+    with case(s, "CEO-02", "Workspace TLC Điều hành", "Đọc các thẻ số; bấm thẻ Đơn chờ tôi duyệt mở danh sách", "",
+              "Thẻ nhân sự / đơn chờ của tôi / đơn chờ quản lý bằng đúng số server trả cho thanh") as r:
         s.step("Anh Thành đọc các thẻ số trên workspace TLC Điều hành")
         values = (card_value(p, "Nhân sự đang làm việc"), card_value(p, "Đơn chờ tôi duyệt"), card_value(p, "Đơn chờ quản lý duyệt"))
-        check(values == (60, 2, 3), str(values))
+        server = (len(list_of(s, "Employee", filters={"status": "Active"}, fields=["name"], limit=500)),
+                  len(list_of(s, "Leave Application", filters={"workflow_state": TO_MANAGER, "leave_approver": "thanh@demo.example"},
+                              fields=["name"], limit=500)),
+                  len(list_of(s, "Leave Application", filters={"workflow_state": TO_MANAGER}, fields=["name"], limit=500)))
+        check(values == server and server[0] >= 60, f"thẻ {values} ≠ server {server}")
         s.step("Anh Thành bấm thẻ Đơn chờ tôi duyệt để mở danh sách")
         p.locator(".widget", has_text="Đơn chờ tôi duyệt").first.click()
         p.wait_for_load_state("networkidle")

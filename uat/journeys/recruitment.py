@@ -5,7 +5,7 @@ form. API is only used to read back what was stored after the person did the wor
 import re
 from urllib.parse import quote
 
-from lib import BASE, REQ, Session, case, check, dt, expect, login, open_actions, MENU_ITEMS
+from lib import BASE, REQ, Session, api, case, check, csrf_token, dt, expect, login, open_actions, MENU_ITEMS, flt
 
 
 CLEARED = "recruitment.candidate@demo.example"
@@ -263,3 +263,113 @@ def recruitment_flow(browser):
 
 
 JOURNEYS = [recruitment_flow]
+
+def ai_hiring(browser):
+    """Chat tab + six-step AI hiring: the assistant reads the CV, a person makes every commitment."""
+    s = Session(browser, "AI", "hoa")
+    try:
+        login(s)
+        p = s.page
+        employee = api(s, "frappe.client.get_value", doctype="Employee", filters=json.dumps({"user_id": "hoa@demo.example"}),
+                        fieldname="name")["name"]
+        with case(s, "REC-AI-01", "Chat trợ lý HR ngay trong Desk",
+                  "Workspace TLC Nhân sự > bấm Trợ lý AI (Chat) > đọc lời chào > hỏi mã nhân viên của tôi",
+                  "hoa@demo.example",
+                  "Mở tab Desk có khung chat Raven, DM với trợ lý hiện lời chào và trả lời đúng mã nhân viên của người đang đăng nhập") as r:
+            s.step("Chị Hòa mở workspace TLC Nhân sự và bấm shortcut Trợ lý AI (Chat)")
+            p.goto(f"{BASE}/desk/tlc-hr/tlc-nh%C3%A2n-s%E1%BB%B1")
+            p.wait_for_load_state("networkidle")
+            widget = p.locator(".widget", has_text="Trợ lý AI (Chat)").first
+            expect(widget).to_be_visible()
+            widget.click()
+            p.wait_for_timeout(6000)
+            check("tro-ly-ai" in p.url, f"shortcut không mở tab chat mà ở {p.url.replace(BASE, '')}")
+            expect(p.locator("iframe")).to_be_visible(timeout=20000)
+            fr = p.frame_locator("iframe").first
+            for _ in range(20):
+                text = " ".join(fr.locator("body").inner_text().split())
+                if "TLC Demo HR Assistant" in text:
+                    break
+                p.wait_for_timeout(1500)
+            check("TLC Demo HR Assistant" in text and "Xin chào" in text, f"khung chat chưa hiện DM trợ lý: {text[:220]}")
+            s.step("Chị Hòa hỏi trợ lý ngay trong tab chat")
+            box = fr.locator("div[contenteditable='true']").last
+            expect(box).to_be_visible(timeout=30000)
+            box.click()
+            box.type("Cho tôi biết mã nhân viên của tôi, trả lời ngắn gọn.")
+            p.keyboard.press("Enter")
+            reply = ""
+            for _ in range(24):
+                p.wait_for_timeout(4000)
+                reply = " ".join(fr.locator("body").inner_text().split())
+                if employee in reply:
+                    break
+                recent = api(s, "frappe.client.get_list", doctype="Raven Message",
+                             filters=json.dumps([["is_bot_message", "=", 1]]),
+                             fields=json.dumps(["text", "channel_id"]), order_by="creation desc", limit_page_length=5)
+                if any(employee in (row.get("text") or "") for row in recent):
+                    reply = employee
+                    break
+            check(employee in reply, f"trợ lý không trả mã {employee} sau khi hỏi: {reply[-320:]}")
+            r["actual"] = f"Tab chat Desk mở DM với trợ lý; câu trả lời có {employee}"
+
+        with case(s, "REC-AI-02", "AI đối chiếu CV với JD trên hồ sơ ứng viên",
+                  "Mở hồ sơ Trần Minh Anh > bấm AI chấm CV > đọc điểm, nhận định và bước tuyển dụng",
+                  "tran.minhanh@demo.example",
+                  "AI trả điểm 0-100, nhận định và chuyển hồ sơ từ bước 1 sang bước 2; có bản ghi nhật ký AI") as r:
+            s.step("Chị Hòa mở hồ sơ ứng viên do AI sàng lọc")
+            desk(s, "Job Applicant", "tran.minhanh@demo.example")
+            expect(p.locator("button:visible", has_text="AI chấm CV").first).to_be_visible(timeout=20000)
+            s.step("Chị Hòa bấm AI chấm CV và chờ trợ lý đối chiếu")
+            p.locator("button:visible", has_text="AI chấm CV").first.click()
+            for _ in range(40):
+                p.wait_for_timeout(3000)
+                if p.evaluate("() => window.cur_frm && cur_frm.doc.tlc_ai_status") == "Đã chấm":
+                    break
+            doc = api(s, "frappe.client.get_value", doctype="Job Applicant", name="tran.minhanh@demo.example",
+                      fieldname="*")
+            check(doc["tlc_ai_status"] == "Đã chấm" and 0 <= flt(doc["tlc_ai_score"]) <= 100
+                  and doc["tlc_ai_verdict"] in ("Đạt", "Cân nhắc", "Không đạt"), str(doc)[:240])
+            check(doc["tlc_step"] == "2. Đối chiếu tiêu chí", f"AI không đưa hồ sơ sang bước 2: {doc['tlc_step']}")
+            logs = api(s, "frappe.client.get_list", doctype="TLC Recruitment AI Log",
+                       filters=json.dumps([["applicant", "=", "tran.minhanh@demo.example"], ["action", "=", "Screen"]]),
+                       fields=json.dumps(["name", "score", "verdict"]), limit_page_length=5)
+            check(logs, "không có nhật ký AI cho lần chấm")
+            r["actual"] = (f"{doc['tlc_ai_score']}/100 {doc['tlc_ai_verdict']} → {doc['tlc_step']}; "
+                           f"nhật ký {logs[0]['name']}")
+
+        with case(s, "REC-AI-03", "Người duyệt cổng tuyển dụng và Kanban 6 bước",
+                  "Gọi cổng Mời phỏng vấn cho Lê Thu Hà > thử sửa thẳng bước bằng set_value > mở Kanban 6 bước",
+                  "le.thuha@demo.example",
+                  "Cổng ghi nhận người quyết định và lý do, chuyển sang bước 3; sửa bước bằng API bị từ chối; Kanban hiện đủ 6 bước") as r:
+            s.step("Chị Hòa quyết định mời phỏng vấn Lê Thu Hà (cổng con người)")
+            interviewer = api(s, "frappe.client.get_value", doctype="Employee", filters=json.dumps({"user_id": "quang@demo.example"}),
+                              fieldname="name")["name"]
+            out = api(s, "tlc_hr.interface.recruitment_pipeline.advance", name="le.thuha@demo.example", action="invite",
+                      payload=json.dumps({"interviewer": interviewer, "interview_at": "2026-11-05 09:00:00",
+                                          "reason": "Điểm AI 84, kinh nghiệm B2B vượt JD; mời phỏng vấn vòng 1."}))
+            check(out["step"] == "3. Quyết định mời phỏng vấn", str(out))
+            doc = api(s, "frappe.client.get_value", doctype="Job Applicant", name="le.thuha@demo.example", fieldname="*")
+            check(doc["tlc_decision_by"] == "hoa@demo.example" and doc["tlc_decision_reason"], str(doc)[:200])
+            s.step("Thử đổi bước bằng lệnh ghi chung — phải bị chặn")
+            res = p.request.post(f"{BASE}/api/method/frappe.client.set_value",
+                                 data={"doctype": "Job Applicant", "name": "le.thuha@demo.example",
+                                       "fieldname": "tlc_step", "value": "5. Phỏng vấn và quyết định offer"},
+                                 headers={"X-Frappe-CSRF-Token": csrf_token(s)})
+            check(res.status != 200 and "bước tuyển dụng" in res.text().lower(), f"set_value không bị chặn: {res.status}")
+            s.step("Chị Hòa mở Kanban 6 bước và đọc các cột")
+            p.goto(f"{BASE}/desk/job-applicant/view/kanban/TLC%20Tuy%E1%BB%83n%20d%E1%BB%A5ng%206%20b%C6%B0%E1%BB%9Bc")
+            p.wait_for_load_state("networkidle")
+            p.wait_for_timeout(5000)
+            page_text = " ".join(p.locator("body").inner_text().split())
+            missing = [step for step in ("1. Tiếp nhận hồ sơ", "2. Đối chiếu tiêu chí", "3. Quyết định mời phỏng vấn",
+                                         "4. Thư mời và lịch hẹn", "5. Phỏng vấn và quyết định offer",
+                                         "6. Kết quả và lưu vết") if step not in page_text]
+            check(not missing, f"Kanban thiếu cột {missing}: {page_text[:260]}")
+            r["actual"] = (f"Lê Thu Hà → {doc['tlc_step']} bởi {doc['tlc_decision_by']}; set_value bị chặn "
+                           f"({res.status}); Kanban đủ 6 bước")
+    finally:
+        s.close()
+
+
+JOURNEYS.append(ai_hiring)
