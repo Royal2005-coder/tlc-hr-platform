@@ -84,10 +84,48 @@ def user_datetime(iso, clock):
     return f"{user_date(iso)} {clock}"
 
 
+def display_number(text):
+    """Read a number the desk has formatted for display: 32.000.000,00 and 32,000,000.00 both mean 32 million."""
+    raw = str(text or "").strip()
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+(,\d+)?", raw):
+        return float(raw.replace(".", "").replace(",", "."))
+    if re.fullmatch(r"-?\d{1,3}(,\d{3})+(\.\d+)?", raw):
+        return float(raw.replace(",", ""))
+    if re.fullmatch(r"-?\d+(\.\d+)?", raw):
+        return float(raw)
+    return None
+
+
+def confirm_dialog(page, label="Xác nhận"):
+    """Press the dialog's own primary button. A pointer click can be intercepted by another dialog Frappe
+    keeps open over the form (the interview-result prompt), so the button is pressed where it lives."""
+    pressed = page.evaluate("""(name) => {
+        const buttons = [...document.querySelectorAll('.modal.show button')]
+            .filter((b) => (b.innerText || '').trim() === name && !b.disabled);
+        buttons.forEach((button) => button.click());
+        return buttons.length;
+    }""", label)
+    check(pressed, f"không tìm thấy nút “{label}” đang bật trên hộp thoại")
+
+
+def dismiss_dialog(page, times=4):
+    """Frappe HR asks on its own whether a cleared interview should mark the applicant Accepted, and that dialog sits
+    over the form. Close it by clicking its own button in the page: a scripted pointer click would be intercepted."""
+    for _ in range(times):
+        closed = page.evaluate("""() => {
+            const buttons = [...document.querySelectorAll('.modal.show .btn-modal-close')];
+            buttons.forEach((button) => button.click());
+            return buttons.length;
+        }""")
+        page.wait_for_timeout(1000)
+        if not closed:
+            return
+
+
 def dialog_field(page, name, value, link=False):
     """Fill one field of a dialog the form opened (the form controls are not on cur_frm there)."""
-    box = page.locator(".modal-content:visible").last.locator(
-        f"input[data-fieldname='{name}']:visible, textarea[data-fieldname='{name}']:visible").last
+    box = page.locator(f".modal:visible .frappe-control[data-fieldname='{name}'] input:visible, "
+                       f".modal:visible .frappe-control[data-fieldname='{name}'] textarea:visible").last
     box.wait_for(state="visible", timeout=20000)
     box.click()
     page.wait_for_timeout(300)
@@ -108,8 +146,8 @@ def dialog_field(page, name, value, link=False):
     if link:
         check(bool(shown), f"ô liên kết {name} không nhận giá trị {value!r}")
         return
-    if re.sub(r"\D", "", shown) and re.sub(r"\D", "", shown) == re.sub(r"\D", "", str(value)):
-        return  # a currency control shows 32,000,000.00 while the caller passed 32000000
+    if display_number(shown) is not None and display_number(value) is not None             and abs(display_number(shown) - display_number(value)) < 0.01:
+        return  # the control shows 32.000.000,00 while the caller passed 32000000
     check(shown == str(value).strip() or str(value).strip() in shown,
           f"ô hội thoại {name} đang là {shown!r}, mong {value!r}")
 
@@ -408,8 +446,9 @@ def ai_hiring(browser):
             dialog_field(p, "interviewer", interviewer, link=True)
             dialog_field(p, "interview_at", user_datetime("2026-11-05", "09:00:00"))
             dialog_field(p, "reason", "Điểm đối chiếu vượt yêu cầu, kinh nghiệm B2B và tiếng Anh C1 phù hợp JD; mời vòng 1.")
-            p.locator(".modal-content:visible").last.locator("button:visible", has_text="Xác nhận").first.click()
+            confirm_dialog(p)
             p.wait_for_timeout(12000)
+            dismiss_dialog(p)
             p.evaluate("() => cur_frm.reload_doc()")
             p.wait_for_timeout(6000)
             out = api(s, "frappe.client.get_value", doctype="Job Applicant",
@@ -518,12 +557,13 @@ def ai_hiring(browser):
                   "Biên bản Pass tạo Interview TLC Recruitment Final đã nộp, trạng thái Cleared; hồ sơ sang bước 5; HR không tự "
                   "quyết định offer; Giám đốc tạo Job Offer, hồ sơ sang bước 6 và nhật ký đủ dấu vết của cả sáu bước") as r:
             s.step("Chị Hòa ghi biên bản và kết quả phỏng vấn (cổng bước 5)")
+            dismiss_dialog(p)
             press_menu(p, "Trợ lý tuyển dụng", "Ghi nhận phỏng vấn")
             dialog_field(p, "interview_notes", "Ứng viên trình bày rõ cách dẫn dắt đội 45 người và số liệu tăng trưởng 32% "
                                                "sau hai năm; thống nhất thử việc hai tháng.")
-            p.locator(".modal-content:visible").last.locator("select[data-fieldname='interview_result']").first.select_option("Pass")
+            p.locator(".modal:visible select[data-fieldname='interview_result']").last.select_option("Pass")
             dialog_field(p, "reason", "Đủ tiêu chí bắt buộc, vòng hồ sơ đạt; chuyển quyết định offer.")
-            p.locator(".modal-content:visible").last.locator("button:visible", has_text="Xác nhận").first.click()
+            p.locator(".modal:visible button:visible", has_text="Xác nhận").last.click()
             p.wait_for_timeout(14000)
             p.evaluate("() => cur_frm.reload_doc()")
             p.wait_for_timeout(7000)
@@ -546,11 +586,14 @@ def ai_hiring(browser):
             sd = Session(browser, "AI", "thanh")
             login(sd)
             desk(sd, "Job Applicant", "vo.ngoclan@demo.example")
+            sd.page.wait_for_timeout(2500)
+            dismiss_dialog(sd.page)
+            dismiss_dialog(p)
             press_menu(sd.page, "Trợ lý tuyển dụng", "Quyết định offer")
             sd.page.wait_for_selector("[data-fieldname='salary']:visible", timeout=120000)
             dialog_field(sd.page, "salary", "32000000")
             dialog_field(sd.page, "joining_date", user_date("2026-12-01"))
-            sd.page.locator(".modal-content:visible").last.locator("button:visible", has_text="Xác nhận").first.click()
+            confirm_dialog(sd.page)
             sd.page.wait_for_timeout(18000)
             after = api(sd, "frappe.client.get_value", doctype="Job Applicant",
                         filters=json.dumps({"email_id": "vo.ngoclan@demo.example"}),
@@ -567,6 +610,44 @@ def ai_hiring(browser):
             check(need <= set(events), f"nhật ký thiếu {sorted(need - set(events))} trong {events}")
             r["actual"] = (f"Vòng cuối {cleared[0]['name']} Cleared; HR bị chặn offer; offer {after['tlc_job_offer']} do "
                            f"{after['tlc_decision_by']}; {len(events)} sự kiện phủ đủ 6 bước")
+
+        with case(s, "REC-AI-07", "Thư xác nhận lịch hẹn và bản tổng hợp phỏng vấn theo tiêu chí",
+                  "Trên hồ sơ đã ở bước 5: mở Thư từ ứng viên ▸ Thư xác nhận lịch hẹn > đọc thư dựng từ mẫu xác nhận > "
+                  "đóng hộp thư không gửi > bấm Tổng hợp phỏng vấn theo tiêu chí để trợ lý đối chiếu biên bản",
+                  "dang.huuphuc@demo.example",
+                  "Lá thư thứ hai lấy từ mẫu TLC Xác nhận lịch phỏng vấn, có ngày hẹn đã chốt và người phỏng vấn; bản tổng "
+                  "hợp của trợ lý lưu vào hồ sơ và nhật ký ghi ai.interview.summarised") as r:
+            desk(s, "Job Applicant", "dang.huuphuc@demo.example")
+            dismiss_dialog(p)
+            when = api(s, "frappe.client.get_value", doctype="Job Applicant",
+                       filters=json.dumps({"email_id": "dang.huuphuc@demo.example"}),
+                       fieldname="tlc_interview_at")["tlc_interview_at"]
+            day = dt.datetime.strptime(when[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            s.step("Chị Hòa mở thư xác nhận lịch hẹn dựng từ mẫu riêng")
+            press_menu(p, "Thư từ ứng viên", "Thư xác nhận lịch hẹn")
+            p.wait_for_selector("input[data-fieldname='subject']:visible", timeout=120000)
+            p.wait_for_timeout(2500)
+            subject = p.input_value("input[data-fieldname='subject']:visible")
+            letter = p.evaluate(COMPOSER_TEXT)
+            check("Xác nhận lịch phỏng vấn" in subject, f"chủ đề không từ mẫu xác nhận: {subject}")
+            check(day in letter and "TLC Xác nhận lịch phỏng vấn" in letter, f"thư thiếu lịch hoặc nguồn mẫu: {letter[:240]}")
+            dismiss_dialog(p)
+            dismiss_dialog(p)
+            s.step("Chị Hòa để trợ lý tổng hợp biên bản phỏng vấn theo từng tiêu chí")
+            press_menu(p, "Trợ lý tuyển dụng", "Tổng hợp phỏng vấn theo tiêu chí")
+            p.wait_for_function("() => window.cur_frm && cur_frm.doc.tlc_interview_summary", timeout=180000)
+            p.evaluate("() => cur_frm.reload_doc()")
+            p.wait_for_timeout(5000)
+            summary = api(s, "frappe.client.get_value", doctype="Job Applicant",
+                          filters=json.dumps({"email_id": "dang.huuphuc@demo.example"}), fieldname="tlc_interview_summary")
+            check((summary["tlc_interview_summary"] or "").strip(), "trợ lý không lưu bản tổng hợp vào hồ sơ")
+            marks = api(s, "frappe.client.get_list", doctype="TLC AI Trace Log",
+                        filters=json.dumps([["candidate", "=", "dang.huuphuc@demo.example"],
+                                            ["event", "=", "ai.interview.summarised"]]),
+                        fields=json.dumps(["name", "actor", "model", "duration_ms"]), limit_page_length=3)
+            check(marks, "nhật ký thiếu dòng tổng hợp phỏng vấn")
+            r["actual"] = (f"{subject}; bản tổng hợp {len(summary['tlc_interview_summary'].splitlines())} dòng lưu vào hồ sơ, "
+                           f"nhật ký {marks[0]['name']} ({marks[0]['model']}, {int(marks[0]['duration_ms'] or 0) / 1000:.1f}s)")
     finally:
         s.close()
 
