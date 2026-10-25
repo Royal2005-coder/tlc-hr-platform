@@ -38,9 +38,7 @@ def flt(value):
 
 def month_bounds(offset=0):
     first = dt.date.today().replace(day=1)
-    if offset < 0:
-        first = (first - dt.timedelta(days=1)).replace(day=1)
-    elif offset > 0:
+    if offset:
         month = first.month + offset
         first = first.replace(year=first.year + (month - 1) // 12, month=(month - 1) % 12 + 1)
     last = (first + dt.timedelta(days=31)).replace(day=1) - dt.timedelta(days=1)
@@ -753,17 +751,20 @@ def release_department(s, start):
     for department in sorted(grouped):
         if len(grouped[department]) < 2:
             continue
-        for slip in grouped[department]:
-            if slip["docstatus"] == 1:
-                api(s, "frappe.client.cancel", doctype=SS, name=slip["name"])
-            api(s, "frappe.client.delete", doctype=SS, name=slip["name"])
-        for entry in {slip["payroll_entry"] for slip in grouped[department] if slip.get("payroll_entry")}:
-            if list_of(s, SS, filters=[["payroll_entry", "=", entry]], fields=["name"]):
-                continue
-            status = int(api_get(s, f"/api/resource/{quote(PE)}/{quote(entry)}").json()["data"]["docstatus"])
-            if status == 1:
-                api(s, "frappe.client.cancel", doctype=PE, name=entry)
-            api(s, "frappe.client.delete", doctype=PE, name=entry)
+        try:
+            for slip in grouped[department]:
+                if slip["docstatus"] == 1:
+                    api(s, "frappe.client.cancel", doctype=SS, name=slip["name"])
+                api(s, "frappe.client.delete", doctype=SS, name=slip["name"])
+            for entry in {slip["payroll_entry"] for slip in grouped[department] if slip.get("payroll_entry")}:
+                if list_of(s, SS, filters=[["payroll_entry", "=", entry]], fields=["name"]):
+                    continue
+                status = int(api_get(s, f"/api/resource/{quote(PE)}/{quote(entry)}").json()["data"]["docstatus"])
+                if status == 1:
+                    api(s, "frappe.client.cancel", doctype=PE, name=entry)
+                api(s, "frappe.client.delete", doctype=PE, name=entry)
+        except Exception:
+            return None  # a signed payroll is protected by the module's own guard: leave it alone
         return department
     return None
 

@@ -122,6 +122,27 @@ def dismiss_dialog(page, times=4):
             return
 
 
+def dialog_set(page, values, tries=3):
+    """Set dialog values through Frappe's own field objects: typing into the control does not always reach the model."""
+    for _ in range(tries):
+        page.wait_for_timeout(700)
+        changed = page.evaluate("""(items) => {
+            if (!window.cur_dialog || !window.cur_dialog.fields_dict) return [];
+            const changed = [];
+            Object.entries(items).forEach(([name, value]) => {
+                if (window.cur_dialog.fields_dict[name]) {
+                    window.cur_dialog.set_value(name, value);
+                    changed.push(name);
+                }
+            });
+            return changed;
+        }""", values)
+        if len(changed) == len(values):
+            page.wait_for_timeout(700)
+            return True
+    raise AssertionError(f"hộp thoại không nhận các ô {sorted(values)}")
+
+
 def dialog_field(page, name, value, link=False):
     """Fill one field of a dialog the form opened (the form controls are not on cur_frm there)."""
     box = page.locator(f".modal:visible .frappe-control[data-fieldname='{name}'] input:visible, "
@@ -559,10 +580,12 @@ def ai_hiring(browser):
             s.step("Chị Hòa ghi biên bản và kết quả phỏng vấn (cổng bước 5)")
             dismiss_dialog(p)
             press_menu(p, "Trợ lý tuyển dụng", "Ghi nhận phỏng vấn")
-            dialog_field(p, "interview_notes", "Ứng viên trình bày rõ cách dẫn dắt đội 45 người và số liệu tăng trưởng 32% "
-                                               "sau hai năm; thống nhất thử việc hai tháng.")
-            p.locator(".modal:visible select[data-fieldname='interview_result']").last.select_option("Pass")
-            dialog_field(p, "reason", "Đủ tiêu chí bắt buộc, vòng hồ sơ đạt; chuyển quyết định offer.")
+            dialog_set(p, {
+                "interview_notes": "Ứng viên trình bày rõ cách dẫn dắt đội 45 người và số liệu tăng trưởng 32% sau hai năm; "
+                                   "thống nhất thử việc hai tháng.",
+                "interview_result": "Pass",
+                "reason": "Đủ tiêu chí bắt buộc, vòng hồ sơ đạt; chuyển quyết định offer.",
+            })
             p.locator(".modal:visible button:visible", has_text="Xác nhận").last.click()
             p.wait_for_timeout(14000)
             p.evaluate("() => cur_frm.reload_doc()")
@@ -591,8 +614,7 @@ def ai_hiring(browser):
             dismiss_dialog(p)
             press_menu(sd.page, "Trợ lý tuyển dụng", "Quyết định offer")
             sd.page.wait_for_selector("[data-fieldname='salary']:visible", timeout=120000)
-            dialog_field(sd.page, "salary", "32000000")
-            dialog_field(sd.page, "joining_date", user_date("2026-12-01"))
+            dialog_set(sd.page, {"salary": 32000000, "joining_date": "2026-12-01"})
             confirm_dialog(sd.page)
             sd.page.wait_for_timeout(18000)
             after = api(sd, "frappe.client.get_value", doctype="Job Applicant",

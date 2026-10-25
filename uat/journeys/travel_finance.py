@@ -492,7 +492,8 @@ def travel_finance_flow(browser):
         p.keyboard.press("Escape")
         p.wait_for_timeout(800)
 
-    t_start, t_end = free_window(s_an, an_emp_id, 3)
+    # far enough out that the role fixtures' leave days for the same person (working_day 20-26) stay free
+    t_start, t_end = free_window(s_an, an_emp_id, 3, after=working_day(40))
     with case(s_an, "TRV-02", "Tạo đề xuất công tác có phí có dự toán",
               "Travel Request > Thêm > nhập nơi đến, ngày đi/về, dự toán chi phí, số tiền tạm ứng > Lưu > Hành động > Gửi duyệt",
               f"Hà Nội 3 ngày ({vn(t_start)} – {vn(t_end)}), dự toán 5.000.000, tạm ứng 4.000.000",
