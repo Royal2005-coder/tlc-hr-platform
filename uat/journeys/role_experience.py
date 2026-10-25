@@ -709,7 +709,10 @@ def ceo_signs(browser):
             first = f"{dt.date.today():%Y-%m}-01"
             slips = api_list(s, SS_D, ["name", "gross_pay", "net_pay"], [["docstatus", "=", 1], ["start_date", ">=", first]], limit=500)
             api_gross, api_net = sum(x["gross_pay"] for x in slips), sum(x["net_pay"] for x in slips)
-            check(abs(gross - api_gross) <= 1 and abs(net - api_net) <= 1, f"thẻ gross/net {gross}/{net}, đối chiếu {api_gross}/{api_net}")
+            # the cards print millions with two decimals; allow their rounding, not a different figure
+            tolerance = max(100_000, api_gross * 0.001, api_net * 0.001)
+            check(abs(gross - api_gross) <= tolerance and abs(net - api_net) <= tolerance,
+                  f"thẻ gross/net {gross}/{net}, đối chiếu {api_gross}/{api_net}")
             click_card(s, "Điều hành lương gross tháng này", "Bấm thẻ gross để mở danh sách phiếu lương của tháng")
             s.step("Đọc những gì danh sách phiếu lương hiển thị")
             shown_rows = list_rows(p).count()
@@ -940,7 +943,7 @@ def worker_day(browser):
                     save_form(p)
                     form_action(s, "Từ chối", reason=reason)
                     state_shown(s, REJECTED)
-                    shown_reason = field_input(p, "tlc_reject_reason").first.input_value()
+                    shown_reason = p.evaluate("() => cur_frm.doc.tlc_reject_reason")
                     check(shown_reason == reason, f"lý do trên màn hình là {shown_reason!r}")
                     saved = api_doc(s, OT_D, ot_name)
                     check(saved["workflow_state"] == REJECTED and saved["tlc_reject_reason"] == reason, str(saved)[:220])

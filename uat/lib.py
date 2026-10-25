@@ -337,9 +337,19 @@ def card_value(p, label):
     widget = p.locator(".widget", has_text=label).first
     expect(widget).to_be_visible()
     for _ in range(30):
-        numbers = re.findall(r"\d[\d.,]*", widget.inner_text().replace(label, ""))
-        if numbers:
-            return int(numbers[0].replace(".", "").replace(",", ""))
+        text = widget.inner_text().replace(label, "")
+        match = re.search(r"(\d[\d.,]*)\s*(K|M|B|T|Tr|tỷ|triệu)?", text)
+        if match:
+            number, unit = match.group(1), (match.group(2) or "").lower()
+            if "," in number and "." in number:
+                number = number.replace(".", "").replace(",", ".")
+            elif "," in number:
+                number = number.replace(",", ".")
+            else:
+                number = number.replace(".", "")
+            scale = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000, "t": 1_000_000_000_000,
+                     "tr": 1_000_000, "tỷ": 1_000_000_000, "triệu": 1_000_000}.get(unit, 1)
+            return int(round(float(number) * scale))
         p.wait_for_timeout(300)
     raise AssertionError(f"thẻ {label} không có số")
 

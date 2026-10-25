@@ -1086,8 +1086,9 @@ def travel_finance_flow(browser):
             # Bấm cập nhật/refresh hoặc đọc open_items
             text_per = screen_text(p_oi)
             doc_p = api_get(s_lan_oi, f"/api/resource/TLC Attendance Period/{per_cur[0]['name']}").json()["data"]
-            open_items = doc_p.get("open_items", "")
-            check(unrep_trip in open_items or "Công tác chưa hoàn tất báo cáo" in open_items,
+            live = api(s_lan_oi, "tlc_hr.interface.attendance.period_open_items", name=per_cur[0]["name"]).get("open_items") or []
+            open_items = chr(10).join(live) or doc_p.get("open_items", "")
+            check(any(unrep_trip in row for row in live) or unrep_trip in open_items,
                   f"Kỳ công không liệt kê chuyến công tác chưa báo cáo {unrep_trip}: {open_items[:200]}")
             r["actual"] = f"Kỳ công {per_cur[0]['name']} ({cur_month}): open_count = {doc_p.get('open_count')}; việc tồn có mặt {unrep_trip}"
         else:
