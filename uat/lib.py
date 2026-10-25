@@ -387,6 +387,22 @@ def open_actions(p):
     return True
 
 
+def press_menu(p, group, item):
+    """Open a grouped form action and click one entry: the desk renders a group as a dropdown, not as a button."""
+    p.locator("button:visible", has_text=group).first.click()
+    p.wait_for_timeout(900)
+    clicked = p.evaluate("""(label) => {
+        const leaf = [...document.querySelectorAll('.dropdown-menu *')].filter(n => !n.children.length
+            && (n.innerText || '').trim() === label);
+        if (!leaf.length) return false;
+        leaf[0].closest('li, a, button').click();
+        return true;
+    }""", item)
+    if not clicked:
+        raise AssertionError(f"không thấy mục “{item}” trong nhóm “{group}”")
+    p.wait_for_timeout(1200)
+
+
 def workflow_actions(p):
     if not open_actions(p):
         return []

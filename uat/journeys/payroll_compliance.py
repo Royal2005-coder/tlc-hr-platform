@@ -660,12 +660,19 @@ def previous_slip(s, employee, before):
     return rows[0] if rows else None
 
 
-def ensure_previous_slip(s, employee, month):
+def month_before(start):
+    """The calendar month that precedes a payroll month, used for the baseline payslip."""
+    first = (dt.date.fromisoformat(start) - dt.timedelta(days=1)).replace(day=1)
+    last = (first + dt.timedelta(days=31)).replace(day=1) - dt.timedelta(days=1)
+    return first.isoformat(), last.isoformat()
+
+
+def ensure_previous_slip(s, employee, start):
     """The baseline payslip of the month before, as a fixture (nobody payrolls it in this build)."""
-    found = previous_slip(s, employee, month_bounds(0)[0])
+    found = previous_slip(s, employee, start)
     if found:
         return found["name"]
-    start, end = month_bounds(-1)
+    start, end = month_before(start)
     rows = list_of(s, SSA, filters=[["employee", "=", employee], ["docstatus", "=", 1]],
                    fields=["name", "salary_structure", "company", "payroll_payable_account", "base"], limit=50)
     latest = max(rows, key=lambda r: flt(r["base"]))
@@ -710,31 +717,38 @@ def candidates(s, start, end):
 
 
 def prepare_month(browser, s):
-    """Choose the month, lock its kỳ công through the desk, and lay the baseline payslip under it."""
-    start, end = month_bounds(0)
-    month = start[:7]
+    """Choose the month, lock its kỳ công through the desk, and lay the baseline payslip under it.
+
+    A live month can hold an unresolved exception (someone without a covering shift, an open request), and this
+    journey is about the salary decision rather than the closing, so the fixture takes the first month whose scope
+    really locks: this month first, then the previous one.
+    """
     tried, notes = [], []
-    for plan in candidates(s, start, end):
-        if plan["scope"] in tried:
-            continue
-        tried.append(plan["scope"])
-        try:
-            plan["period"] = close_period_for(browser, plan["scope"], month)
-        except Exception as exc:
-            notes.append(f"{plan['scope']}: {str(exc)[:90]}")
-            continue
-        plan.update({"month": month, "start": start, "end": end, "decision_on": start[:8] + "16",
-                     "employee_name": api_get(s, f"/api/resource/Employee/{quote(plan['employee'])}").json()["data"]["employee_name"],
-                     "raise_to": round(plan["base"] * 1.6)})
-        plan["slip0"] = ensure_previous_slip(s, plan["employee"], month)
-        plan["baseline_gross"] = flt(api_get(s, f"/api/resource/{quote(SS)}/{quote(plan['slip0'])}").json()["data"]["gross_pay"])
-        ensure_emails(s, people_of(s, plan["department"]))
-        # the payslip mail queue walks every slip of the payroll entry, so every demo employee needs a preferred address
-        ensure_emails(s, [r["name"] for r in list_of(s, "Employee", filters={"company": COMPANY, "status": "Active"},
-                                                       fields=["name"], limit=500)])
-        plan["notes"] = notes
-        return plan
-    raise AssertionError(f"không khoá được kỳ công {month} của phạm vi nào để lập bảng lương ({'; '.join(notes) or 'không có bộ phận chưa tính lương'})")
+    for offset in (0, -1):
+        start, end = month_bounds(offset)
+        month = start[:7]
+        for plan in candidates(s, start, end):
+            if plan["scope"] in tried:
+                continue
+            tried.append(plan["scope"])
+            try:
+                plan["period"] = close_period_for(browser, plan["scope"], month)
+            except Exception as exc:
+                notes.append(f"{plan['scope']} {month}: {str(exc)[:90]}")
+                continue
+            plan.update({"month": month, "start": start, "end": end, "decision_on": start[:8] + "16",
+                         "employee_name": api_get(s, f"/api/resource/Employee/{quote(plan['employee'])}").json()["data"]["employee_name"],
+                         "raise_to": round(plan["base"] * 1.6)})
+            plan["slip0"] = ensure_previous_slip(s, plan["employee"], start)
+            plan["baseline_gross"] = flt(api_get(s, f"/api/resource/{quote(SS)}/{quote(plan['slip0'])}").json()["data"]["gross_pay"])
+            ensure_emails(s, people_of(s, plan["department"]))
+            # the payslip mail queue walks every slip of the payroll entry, so every demo employee needs a preferred address
+            ensure_emails(s, [r["name"] for r in list_of(s, "Employee", filters={"company": COMPANY, "status": "Active"},
+                                                         fields=["name"], limit=500)])
+            plan["notes"] = notes
+            return plan
+    raise AssertionError("không khoá được kỳ công tháng này hoặc tháng trước cho phạm vi nào để lập bảng lương "
+                        f"({'; '.join(notes) or 'không có bộ phận chưa tính lương'})")
 
 
 

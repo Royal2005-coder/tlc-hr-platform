@@ -21,6 +21,46 @@ PROOF = Path("/tmp/uat-bank-proof.txt")
 PROOF.write_text("UAT bank transfer proof", encoding="utf-8")
 
 
+def busy_days(s, employee):
+    """Dates the traveller already has leave, overtime or another trip on: a fixture trip must not land on them."""
+    busy = set()
+    for row in list_of(s, "Leave Application", filters=[["employee", "=", employee], ["docstatus", "in", [0, 1]]],
+                       fields=["from_date", "to_date"], limit=300):
+        busy |= span(row["from_date"], row["to_date"])
+    for row in list_of(s, "TLC Overtime Request", filters=[["employee", "=", employee], ["docstatus", "in", [0, 1]]],
+                       fields=["ot_date"], limit=300):
+        busy.add(row["ot_date"])
+    for row in list_of(s, TR, filters=[["employee", "=", employee]], fields=["tlc_from_date", "tlc_to_date"], limit=300):
+        busy |= span(row["tlc_from_date"], row["tlc_to_date"])
+    return busy
+
+
+def span(start, end):
+    if not start:
+        return set()
+    days, day, last = set(), dt.date.fromisoformat(start), dt.date.fromisoformat(end or start)
+    while day <= last:
+        days.add(day.isoformat())
+        day += dt.timedelta(days=1)
+    return days
+
+
+def free_window(s, employee, days, after=None):
+    """The next run of `days` working days with nothing scheduled: the seed holds demo trips and leaves."""
+    busy = busy_days(s, employee)
+    cursor = dt.date.fromisoformat(after) if after else dt.date.today()
+    for _ in range(30):
+        run, day = [], cursor
+        while len(run) < days:
+            day += dt.timedelta(days=1)
+            if day.weekday() < 5:
+                run.append(day)
+        if not busy & {d.isoformat() for d in run}:
+            return run[0].isoformat(), run[-1].isoformat()
+        cursor = run[-1]
+    return working_day(30), working_day(30 + days - 1)
+
+
 # ---------------------------------------------------------------------------------------------------- desk helpers
 
 def slug_of(doctype):
@@ -452,7 +492,7 @@ def travel_finance_flow(browser):
         p.keyboard.press("Escape")
         p.wait_for_timeout(800)
 
-    t_start, t_end = working_day(15), working_day(17)
+    t_start, t_end = free_window(s_an, an_emp_id, 3)
     with case(s_an, "TRV-02", "Tạo đề xuất công tác có phí có dự toán",
               "Travel Request > Thêm > nhập nơi đến, ngày đi/về, dự toán chi phí, số tiền tạm ứng > Lưu > Hành động > Gửi duyệt",
               f"Hà Nội 3 ngày ({vn(t_start)} – {vn(t_end)}), dự toán 5.000.000, tạm ứng 4.000.000",
@@ -507,10 +547,11 @@ def travel_finance_flow(browser):
     quang_emp = api_get(s_quang2, "/api/resource/Employee?filters=" + json.dumps([["user_id", "=", "quang@demo.example"]])
                         + "&fields=" + json.dumps(["name", "company"])).json()["data"][0]
     # Setup only: the request the department head will send from its own form on screen.
+    q_start, q_end = free_window(s_quang2, quang_emp["name"], 2)
     q_trip_name = api(s_quang2, "frappe.client.insert", doc=json.dumps({
         "doctype": TR, "company": quang_emp["company"], "employee": quang_emp["name"], "travel_type": "Domestic",
         "purpose_of_travel": "TLC Công tác", "tlc_destination": "Đà Nẵng", "description": "Hội nghị khách hàng",
-        "tlc_from_date": working_day(20), "tlc_to_date": working_day(21), "tlc_from_session": "AM",
+        "tlc_from_date": q_start, "tlc_to_date": q_end, "tlc_from_session": "AM",
         "tlc_to_session": "PM", "tlc_funded": 0}))["name"]
     with case(s_quang2, "TRV-05", "Bỏ cấp duyệt khi người tạo là Trưởng bộ phận",
               "Trưởng phòng Quang mở đề xuất của chính mình > Hành động > Gửi giám đốc",
@@ -1237,7 +1278,7 @@ def travel_finance_flow(browser):
     own_trip = api(s_an, "frappe.client.insert", doc=json.dumps({
         "doctype": TR, "company": company, "employee": an_emp_id, "travel_type": "Domestic",
         "purpose_of_travel": "TLC Công tác", "tlc_destination": "Đà Nẵng", "description": "Kiểm tra không tự duyệt",
-        "tlc_from_date": working_day(25), "tlc_to_date": working_day(26), "tlc_from_session": "AM",
+        "tlc_from_date": free_window(s_an, an_emp_id, 2, after=t_end)[0], "tlc_to_date": free_window(s_an, an_emp_id, 2, after=t_end)[1], "tlc_from_session": "AM",
         "tlc_to_session": "PM", "tlc_funded": 0}))
     own_trip = api(s_an, "frappe.model.workflow.apply_workflow", doc=json.dumps(own_trip), action="Gửi duyệt")
     with case(s_an, "GOV-02", "Không ai được tự duyệt yêu cầu của chính mình",
