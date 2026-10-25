@@ -716,40 +716,83 @@ def candidates(s, start, end):
     return out
 
 
-def prepare_month(browser, s):
-    """Choose the month, lock its kỳ công through the desk, and lay the baseline payslip under it.
+def settle_plan(browser, s, plan, start, end, month, tried, notes):
+    """Open the payroll month for one plan: close its period through the desk, then lay the baseline payslip."""
+    key = f"{plan['scope']}:{month}"
+    if key in tried:
+        return None
+    tried.append(key)
+    try:
+        plan["period"] = close_period_for(browser, plan["scope"], month)
+    except Exception as exc:
+        notes.append(f"{key}: {str(exc)[:90]}")
+        return None
+    plan.update({"month": month, "start": start, "end": end, "decision_on": start[:8] + "16",
+                 "employee_name": api_get(s, f"/api/resource/Employee/{quote(plan['employee'])}").json()["data"]["employee_name"],
+                 "raise_to": round(plan["base"] * 1.6)})
+    plan["slip0"] = ensure_previous_slip(s, plan["employee"], start)
+    plan["baseline_gross"] = flt(api_get(s, f"/api/resource/{quote(SS)}/{quote(plan['slip0'])}").json()["data"]["gross_pay"])
+    ensure_emails(s, people_of(s, plan["department"]))
+    # the payslip mail queue walks every slip of the payroll entry, so every demo employee needs a preferred address
+    ensure_emails(s, [r["name"] for r in list_of(s, "Employee", filters={"company": COMPANY, "status": "Active"},
+                                                  fields=["name"], limit=500)])
+    plan["notes"] = notes
+    return plan
 
-    A live month can hold an unresolved exception (someone without a covering shift, an open request), and this
-    journey is about the salary decision rather than the closing, so the fixture takes the first month whose scope
-    really locks: this month first, then the previous one.
+
+def release_department(s, start):
+    """Fixture: the payroll journey signs every department of the lockable month before this scenario runs, so free
+    one of them. The period stays locked (the closing is certified elsewhere); only that department's payslips and
+    their payroll entry are removed so this journey has a month to open."""
+    slips = list_of(s, SS, filters=[["start_date", "=", start]],
+                    fields=["name", "department", "docstatus", "payroll_entry"], limit=400)
+    grouped = {}
+    for slip in slips:
+        if slip.get("department"):
+            grouped.setdefault(slip["department"], []).append(slip)
+    for department in sorted(grouped):
+        if len(grouped[department]) < 2:
+            continue
+        for slip in grouped[department]:
+            if slip["docstatus"] == 1:
+                api(s, "frappe.client.cancel", doctype=SS, name=slip["name"])
+            api(s, "frappe.client.delete", doctype=SS, name=slip["name"])
+        for entry in {slip["payroll_entry"] for slip in grouped[department] if slip.get("payroll_entry")}:
+            if list_of(s, SS, filters=[["payroll_entry", "=", entry]], fields=["name"]):
+                continue
+            status = int(api_get(s, f"/api/resource/{quote(PE)}/{quote(entry)}").json()["data"]["docstatus"])
+            if status == 1:
+                api(s, "frappe.client.cancel", doctype=PE, name=entry)
+            api(s, "frappe.client.delete", doctype=PE, name=entry)
+        return department
+    return None
+
+
+def prepare_month(browser, s):
+    """Choose the month this scenario opens its payroll under.
+
+    A live month can hold an unresolved exception, and the payroll journey may already have signed the latest month
+    that locks. The fixture therefore walks back to find a scope it can open, and only then frees one department of
+    an already-signed month, so the salary decision is certified on a month whose closing is real.
     """
     tried, notes = [], []
-    for offset in (0, -1):
+    for offset in (0, -1, -2):
         start, end = month_bounds(offset)
-        month = start[:7]
         for plan in candidates(s, start, end):
-            if plan["scope"] in tried:
-                continue
-            tried.append(plan["scope"])
-            try:
-                plan["period"] = close_period_for(browser, plan["scope"], month)
-            except Exception as exc:
-                notes.append(f"{plan['scope']} {month}: {str(exc)[:90]}")
-                continue
-            plan.update({"month": month, "start": start, "end": end, "decision_on": start[:8] + "16",
-                         "employee_name": api_get(s, f"/api/resource/Employee/{quote(plan['employee'])}").json()["data"]["employee_name"],
-                         "raise_to": round(plan["base"] * 1.6)})
-            plan["slip0"] = ensure_previous_slip(s, plan["employee"], start)
-            plan["baseline_gross"] = flt(api_get(s, f"/api/resource/{quote(SS)}/{quote(plan['slip0'])}").json()["data"]["gross_pay"])
-            ensure_emails(s, people_of(s, plan["department"]))
-            # the payslip mail queue walks every slip of the payroll entry, so every demo employee needs a preferred address
-            ensure_emails(s, [r["name"] for r in list_of(s, "Employee", filters={"company": COMPANY, "status": "Active"},
-                                                         fields=["name"], limit=500)])
-            plan["notes"] = notes
-            return plan
-    raise AssertionError("không khoá được kỳ công tháng này hoặc tháng trước cho phạm vi nào để lập bảng lương "
+            opened = settle_plan(browser, s, plan, start, end, start[:7], tried, notes)
+            if opened:
+                return opened
+    start, end = month_bounds(-1)
+    month = start[:7]
+    released = release_department(s, start)
+    if released:
+        notes.append(f"{month}: giải phóng bộ phận {released} khỏi bảng lương đã ký (fixture)")
+        for plan in candidates(s, start, end):
+            opened = settle_plan(browser, s, plan, start, end, month, tried, notes)
+            if opened:
+                return opened
+    raise AssertionError("không chuẩn bị được kỳ công để lập bảng lương "
                         f"({'; '.join(notes) or 'không có bộ phận chưa tính lương'})")
-
 
 
 # --------------------------------------------------------------------------------------------- the journey

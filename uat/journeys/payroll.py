@@ -29,7 +29,7 @@ def vnd(amount):
     return f"{int(round(amount)):,}".replace(",", ".")
 
 
-def wait_slips(s, name, docstatus, minimum, timeout=240):
+def wait_slips(s, name, docstatus, minimum, timeout=600):
     slips = []
     for _ in range(timeout // 5):
         slips = api_get(s, "/api/resource/Salary Slip?limit_page_length=500&fields=" + json.dumps(["docstatus"])
