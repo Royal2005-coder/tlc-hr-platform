@@ -648,6 +648,38 @@ def ai_hiring(browser):
             check(marks, "nhật ký thiếu dòng tổng hợp phỏng vấn")
             r["actual"] = (f"{subject}; bản tổng hợp {len(summary['tlc_interview_summary'].splitlines())} dòng lưu vào hồ sơ, "
                            f"nhật ký {marks[0]['name']} ({marks[0]['model']}, {int(marks[0]['duration_ms'] or 0) / 1000:.1f}s)")
+        with case(s, "REC-AI-08", "Hoàn tất hồ sơ và bàn giao Employee Onboarding từ offer đã duyệt",
+                  "Mở hồ sơ Võ Ngọc Lan (bước 6) > Trợ lý tuyển dụng ▸ Hoàn tất và bàn giao onboarding > xác nhận",
+                  "vo.ngoclan@demo.example",
+                  "Bản nháp Employee Onboarding sinh từ Job Offer, hồ sơ chuyển Joined, nhật ký ghi pipeline.completed") as r:
+            desk(s, "Job Applicant", "vo.ngoclan@demo.example")
+            dismiss_dialog(p)
+            before = api(s, "frappe.client.get_value", doctype="Job Applicant",
+                         filters=json.dumps({"email_id": "vo.ngoclan@demo.example"}),
+                         fieldname="tlc_step,tlc_job_offer")
+            check(before["tlc_step"] == "6. Kết quả và lưu vết" and before["tlc_job_offer"], f"hồ sơ chưa sẵn bàn giao: {before}")
+            s.step("Chị Hòa bấm Hoàn tất và bàn giao onboarding")
+            press_menu(p, "Trợ lý tuyển dụng", "Hoàn tất và bàn giao onboarding")
+            confirm_dialog(p)
+            p.wait_for_timeout(14000)
+            p.evaluate("() => cur_frm.reload_doc()")
+            p.wait_for_timeout(6000)
+            after = api(s, "frappe.client.get_value", doctype="Job Applicant",
+                        filters=json.dumps({"email_id": "vo.ngoclan@demo.example"}),
+                        fieldname="tlc_pipeline,tlc_job_offer")
+            check(after["tlc_pipeline"] == "Joined", f"hồ sơ chưa chuyển Joined: {after}")
+            onboard = api(s, "frappe.client.get_list", doctype="Employee Onboarding",
+                          filters=json.dumps([["job_offer", "=", after["tlc_job_offer"]]]),
+                          fields=json.dumps(["name", "employee_name", "docstatus", "boarding_status", "date_of_joining"]),
+                          limit_page_length=3)
+            check(onboard, f"không có Employee Onboarding cho offer {after['tlc_job_offer']}")
+            marked = api(s, "frappe.client.get_list", doctype="TLC AI Trace Log",
+                         filters=json.dumps([["candidate", "=", "vo.ngoclan@demo.example"], ["event", "=", "pipeline.completed"]]),
+                         fields=json.dumps(["name"]), limit_page_length=2)
+            check(marked, "nhật ký thiếu dòng pipeline.completed")
+            r["actual"] = (f"{onboard[0]['name']} cho {onboard[0]['employee_name']} từ offer {after['tlc_job_offer']}; "
+                           f"hồ sơ {after['tlc_pipeline']}; nhật ký {marked[0]['name']}")
+
     finally:
         s.close()
 
