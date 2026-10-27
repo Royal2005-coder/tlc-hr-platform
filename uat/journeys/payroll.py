@@ -306,11 +306,14 @@ def payroll_flow(browser):
               "Mở bảng lương > Hành động khi chưa có chứng từ (từ chối) > nhập Số chứng từ & Ngày chi > Cập nhật > Hành động > Xác nhận đã chi",
               reference, "Khi thiếu chứng từ thì không có hành động Xác nhận đã chi; sau khi nhập và lưu thì bảng lương Đã chi, bút toán ngân hàng mang số chứng từ") as r:
         _open_entry(s, REQ["pe"], "Kế toán")
-        refused = s.page.locator("button:visible", has_text="Hành động").count() == 0  # no action offered while the proof is empty
+        # The desk always renders its generic Hành động menu; the gate is that this menu does not offer the payment action yet.
+        refused = "Xác nhận đã chi" not in workflow_actions(s.page)
         s.step("Chưa có chứng từ: Hành động không đề nghị Xác nhận đã chi")
         s.page.wait_for_timeout(800)
         s.step("Kế toán nhập số chứng từ ngân hàng và ngày chi ngay trên form")
-        s.page.locator("button:visible", has_text="Nhân viên").first.click()
+        tab = s.page.locator(".nav-link:visible").filter(has_text="Nhân viên").first
+        if tab.count():
+            tab.click()
         s.page.wait_for_timeout(1200)
         _field(s.page, "tlc_bank_reference").fill(reference)
         _field(s.page, "tlc_bank_reference").press("Tab")

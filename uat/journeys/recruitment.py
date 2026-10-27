@@ -480,7 +480,7 @@ def ai_hiring(browser):
             confirm_dialog(p)
             p.wait_for_timeout(12000)
             dismiss_dialog(p)
-            p.evaluate("() => cur_frm.reload_doc()")
+            reload_form(p)
             p.wait_for_timeout(6000)
             out = api(s, "frappe.client.get_value", doctype="Job Applicant",
                       filters=json.dumps({"email_id": "le.thuha@demo.example"}), fieldname="tlc_step,tlc_interview_at")
@@ -567,7 +567,7 @@ def ai_hiring(browser):
             s.step("Chị Hòa kiểm tra nội dung trợ lý viết rồi bấm Gửi")
             p.locator("button:visible", has_text="Gửi").last.click()
             p.wait_for_timeout(12000)
-            p.evaluate("() => cur_frm.reload_doc()")
+            reload_form(p)
             p.wait_for_timeout(8000)
             doc = api(s, "frappe.client.get_value", doctype="Job Applicant",
                       filters=json.dumps({"email_id": "vo.ngoclan@demo.example"}),
@@ -598,7 +598,7 @@ def ai_hiring(browser):
             })
             p.locator(".modal:visible button:visible", has_text="Xác nhận").last.click()
             p.wait_for_timeout(14000)
-            p.evaluate("() => cur_frm.reload_doc()")
+            reload_form(p)
             p.wait_for_timeout(7000)
             doc = api(s, "frappe.client.get_value", doctype="Job Applicant",
                       filters=json.dumps({"email_id": "vo.ngoclan@demo.example"}), fieldname="*")
@@ -668,7 +668,7 @@ def ai_hiring(browser):
             s.step("Chị Hòa để trợ lý tổng hợp biên bản phỏng vấn theo từng tiêu chí")
             press_menu(p, "Trợ lý tuyển dụng", "Tổng hợp phỏng vấn theo tiêu chí")
             p.wait_for_function("() => window.cur_frm && cur_frm.doc.tlc_interview_summary", timeout=180000)
-            p.evaluate("() => cur_frm.reload_doc()")
+            reload_form(p)
             p.wait_for_timeout(5000)
             summary = api(s, "frappe.client.get_value", doctype="Job Applicant",
                           filters=json.dumps({"email_id": "dang.huuphuc@demo.example"}), fieldname="tlc_interview_summary")
@@ -694,7 +694,7 @@ def ai_hiring(browser):
             press_menu(p, "Trợ lý tuyển dụng", "Hoàn tất và bàn giao onboarding")
             confirm_dialog(p)
             p.wait_for_timeout(14000)
-            p.evaluate("() => cur_frm.reload_doc()")
+            reload_form(p)
             p.wait_for_timeout(6000)
             after = api(s, "frappe.client.get_value", doctype="Job Applicant",
                         filters=json.dumps({"email_id": "vo.ngoclan@demo.example"}),

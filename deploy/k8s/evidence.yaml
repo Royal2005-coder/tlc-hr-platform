@@ -7,6 +7,8 @@ spec:
   template:
     metadata: {labels: {app: uat-evidence}}
     spec:
+      # The evidence lives on the ai1 hostPath; without this pin the pod can land on the other node and serve an empty page.
+      nodeSelector: {kubernetes.io/hostname: ai1-optiplex-tower-plus-7020}
       containers:
         - name: nginx
           image: nginx:1.27-alpine

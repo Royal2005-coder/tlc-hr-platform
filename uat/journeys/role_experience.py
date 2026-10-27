@@ -764,7 +764,9 @@ def accountant_pays(browser):
             actions = workflow_actions(p)
             check("Xác nhận đã chi" not in actions, f"chưa có chứng từ mà nút đã hiện: {actions}")
             s.step("Mở tab Nhân viên và mục Ký và chi lương để nhập đủ chứng từ")
-            p.locator(".nav-link:visible", has_text=re.compile(r"^(Nhân viên|Employees)$")).first.click()
+            employees_tab = p.locator(".nav-link:visible").filter(has_text=re.compile("Nhân viên|Employees")).first
+            employees_tab.wait_for(state="visible", timeout=30000)
+            employees_tab.click()
             p.wait_for_timeout(1200)
             s.step("Gõ số chứng từ ngân hàng vào form")
             type_text(p, "tlc_bank_reference", reference)

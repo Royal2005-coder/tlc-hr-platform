@@ -413,6 +413,22 @@ def workflow_actions(p):
     return items
 
 
+def reload_form(p, timeout=30000):
+    """Reload the open desk form without losing the case to a navigation that is still in flight."""
+    try:
+        p.wait_for_function("() => window.cur_frm && cur_frm.docname", timeout=timeout)
+    except Exception:
+        return False
+    for _ in range(5):
+        try:
+            p.evaluate("() => cur_frm && cur_frm.reload_doc && cur_frm.reload_doc()")
+            p.wait_for_timeout(2500)
+            return True
+        except Exception:
+            p.wait_for_timeout(1200)
+    return False
+
+
 def desk_action(s, name, action, reason=None, doctype="Leave Application"):
     """Hành động → Duyệt or Từ chối on the standard form; Từ chối asks the reason in a dialog. Returns the new state."""
     p = s.page

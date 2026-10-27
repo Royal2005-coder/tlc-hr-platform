@@ -466,8 +466,8 @@ def approve_decision(browser, doctype, name):
         login(director)
         open_form(director, doctype, name)
         director.page.wait_for_timeout(1500)
-        director.page.evaluate("() => cur_frm && cur_frm.reload_doc && cur_frm.reload_doc()")
-        director.page.wait_for_timeout(3000)
+        reload_form(director.page)
+        director.page.wait_for_timeout(1500)
         director.step(f"GIÁM ĐỐC đọc {name} và bấm Phê duyệt quyết định lương")
         press(director, "Phê duyệt quyết định lương", timeout=30000)
         dialog = director.page.locator(".modal:visible").last
@@ -487,8 +487,8 @@ def native_data(s, label, method, primary=None, values=None, download=False):
     dismiss_messages(p)
     open_form(s, PE, REQ["pe"])
     p.wait_for_timeout(1500)
-    p.evaluate("() => cur_frm && cur_frm.reload_doc && cur_frm.reload_doc()")
-    p.wait_for_timeout(3000)
+    reload_form(p)
+    p.wait_for_timeout(1500)
     dismiss_messages(p)
     s.step(f"{s.account.upper()} bấm Dữ liệu lương → {label}")
     try:
