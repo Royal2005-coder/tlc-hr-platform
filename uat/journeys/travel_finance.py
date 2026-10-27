@@ -1125,7 +1125,12 @@ def travel_finance_flow(browser):
                           json.dumps([["company", "=", company], ["scope", "=", "Hội sở"], ["period_month", "=", cur_month]])).json().get("data", [])
         if per_cur:
             open_doc(s_lan_oi, "TLC Attendance Period", per_cur[0]["name"])
-            # Bấm cập nhật/refresh hoặc đọc open_items
+            s_lan_oi.step("Chị Lan mở khung việc tồn của kỳ công để đọc danh sách")
+            header = p_oi.locator(".section-head:visible").first
+            header.click()
+            p_oi.wait_for_timeout(800)
+            header.click()
+            p_oi.wait_for_timeout(1200)
             text_per = screen_text(p_oi)
             doc_p = api_get(s_lan_oi, f"/api/resource/TLC Attendance Period/{per_cur[0]['name']}").json()["data"]
             live = api(s_lan_oi, "tlc_hr.interface.attendance.period_open_items", name=per_cur[0]["name"]).get("open_items") or []

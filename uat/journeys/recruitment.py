@@ -25,6 +25,16 @@ COMPOSER_TEXT = """() => {
 }"""
 
 
+def composer_text(page, tries=3):
+    """Read the composer body; the desk may still be navigating when the dialog opens."""
+    for _ in range(tries):
+        try:
+            return page.evaluate(COMPOSER_TEXT)
+        except Exception:
+            page.wait_for_timeout(1500)
+    return ""
+
+
 def fill(modal, fieldname, text):
     """Type into a dialog field whose control may be a plain textarea or a rich text editor."""
     box = modal.locator(f"[data-fieldname='{fieldname}'] textarea, [data-fieldname='{fieldname}'] input, "
@@ -549,7 +559,7 @@ def ai_hiring(browser):
             p.wait_for_selector("input[data-fieldname='subject']:visible", timeout=90000)
             p.wait_for_timeout(2500)
             subject = p.input_value("input[data-fieldname='subject']:visible")
-            letter = p.evaluate(COMPOSER_TEXT)
+            letter = composer_text(p)
             check("Thư mời phỏng vấn" in subject, f"chủ đề không dựng từ mẫu: {subject}")
             check("vo.ngoclan@demo.example" in letter, f"hộp thư thiếu người nhận: {letter[:200]}")
             check(day in letter, f"nội dung thiếu ngày hẹn {day}: {letter[:300]}")

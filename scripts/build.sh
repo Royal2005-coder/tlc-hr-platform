@@ -10,4 +10,7 @@ DOCKER_BUILDKIT=1 docker build --build-arg=FRAPPE_BRANCH=version-16 --build-arg=
   --secret=id=apps_json,src=apps.json --tag="$IMAGE" --file="$DOCKER_DIR/images/layered/Containerfile" "$DOCKER_DIR"
 docker save "$IMAGE" | sudo k3s ctr -n k8s.io images import - >/dev/null
 sed -i "s|newTag: .*|newTag: $TAG|" deploy/k8s/kustomization.yaml
+# every image is 4.7 GB and the node also serves the site: keep the three newest builds and drop the rest
+docker images --format "{{.Repository}}:{{.Tag}}" | grep "^tlc-hr:" | tail -n +4 | xargs -r docker rmi >/dev/null 2>&1 || true
+docker image prune -f >/dev/null 2>&1 || true
 echo "$IMAGE"

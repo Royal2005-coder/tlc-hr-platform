@@ -501,6 +501,12 @@ def native_data(s, label, method, primary=None, values=None, download=False):
     with p.expect_response(lambda res: f"/api/method/tlc_hr.interface.payroll_compliance.{method}" in res.url,
                            timeout=90000) as response:
         action.click()
+        p.wait_for_timeout(1500)
+        # an export may ask a yes/no question before it asks for its parameters
+        confirm = p.locator(".modal.show .modal-footer button").filter(has_text=re.compile("^(Có|Đồng ý|Yes)$"))
+        if confirm.count():
+            confirm.last.click()
+            p.wait_for_timeout(1200)
         if primary:
             dialog = p.locator(".modal:visible").last
             expect(dialog).to_be_visible()
@@ -671,6 +677,14 @@ def ensure_previous_slip(s, employee, start):
     if found:
         return found["name"]
     start, end = month_before(start)
+    # an earlier attempt of this run may already have laid the baseline for the same month
+    for row in list_of(s, SS, filters=[["employee", "=", employee], ["start_date", "=", start]],
+                       fields=["name", "docstatus"], limit=3):
+        if row["docstatus"] == 1:
+            return row["name"]
+        loaded = api_get(s, f"/api/method/frappe.desk.form.load.getdoc?doctype={quote(SS)}&name={quote(row['name'])}").json()["docs"][0]
+        api(s, "frappe.client.submit", doc=json.dumps(loaded))
+        return row["name"]
     rows = list_of(s, SSA, filters=[["employee", "=", employee], ["docstatus", "=", 1]],
                    fields=["name", "salary_structure", "company", "payroll_payable_account", "base"], limit=50)
     latest = max(rows, key=lambda r: flt(r["base"]))
