@@ -312,7 +312,9 @@ def payroll_flow(browser):
         s.page.wait_for_timeout(800)
         s.step("Kế toán nhập số chứng từ ngân hàng và ngày chi ngay trên form")
         # the proof fields live on the accounting tab: filling them from another tab can only wait for a visible input
-        tab = s.page.locator(".nav-link:visible").filter(has_text=re.compile("Kế toán & Thanh toán|Accounting")).first
+        # scoped to the form: a page-wide .nav-link also matches the workspace sidebar and navigates away
+        tab = s.page.locator(".form-tabs .nav-link:visible, .layout-main-section .nav-link:visible").filter(
+            has_text=re.compile("Kế toán & Thanh toán|Accounting")).first
         if tab.count():
             tab.click()
         s.page.wait_for_timeout(1200)

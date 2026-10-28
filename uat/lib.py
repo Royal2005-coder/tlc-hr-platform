@@ -374,15 +374,16 @@ def menu_items(p):
 
 
 def open_actions(p):
-    """The workflow actions: a "Hành động" button on a computer, the last icon button of the page head on a phone."""
+    """Open the action menu: the "Hành động" button where the desk shows one, the page head's overflow menu elsewhere."""
     button = p.get_by_role("button", name="Hành động")
     if button.count() and button.first.is_visible():
         button.first.click()
     else:
-        icon = p.locator(".page-head button.es-button:not(.menu-more-button):visible")
-        if not icon.count():
+        # only the overflow menu: any other page-head button is a real action, and the last one is a business step
+        menu = p.locator("button.menu-more-button:visible")
+        if not menu.count():
             return False
-        icon.last.click()
+        menu.first.click()
     p.wait_for_timeout(600)
     return True
 
