@@ -4,7 +4,7 @@ resources: [namespace.yaml, data.yaml, frappe.yaml, evidence.yaml, mailpit.yaml]
 images:
   - name: tlc-hr
     newName: docker.io/library/tlc-hr
-    newTag: eacc5242-202610271158
+    newTag: eacc5242-202610271238
 configMapGenerator:
   - name: nginx-template
     namespace: tlc-hr
