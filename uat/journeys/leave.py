@@ -412,7 +412,8 @@ def ceo(browser):
         p.wait_for_timeout(1500)
         r["actual"] = "Nhân sự {}; chờ tôi {}; chờ quản lý {}".format(*values)
     with case(s, "CEO-03", "Duyệt đơn của cấp dưới trực tiếp", "Mở đơn của Quản lý NM1 và Trưởng nhân sự > Hành động > Duyệt",
-              f"{REQ['hung']}, {REQ['hoa']}", "Cả hai Chờ nhân sự duyệt") as r:
+              f"{REQ['hung']}, {REQ.get('hoa') or '(HR-06 chưa tạo đơn)'}", "Cả hai Chờ nhân sự duyệt") as r:
+        check(REQ.get("hoa"), "HR-06 chưa tạo được đơn của Trưởng nhân sự nên không có gì để duyệt")
         out, heads = [], []
         for name in (REQ["hung"], REQ["hoa"]):
             s.step(f"Anh Thành mở đơn {name} và bấm Hành động > Duyệt")
@@ -443,8 +444,9 @@ def ceo(browser):
 def hr_lead_second(browser):
     s = Session(browser, "HR2", "hoa")
     login(s)
-    with case(s, "HR-07", "Không tự duyệt đơn của mình", "Mở đơn của chính mình (đã qua CEO); bấm menu Hành động (dấu ba chấm) xem có nút Duyệt không", REQ["hoa"],
-              "Không có Duyệt/Từ chối cho chính mình") as r:
+    with case(s, "HR-07", "Không tự duyệt đơn của mình", "Mở đơn của chính mình (đã qua CEO); bấm menu Hành động (dấu ba chấm) xem có nút Duyệt không",
+              REQ.get("hoa") or "(HR-06 chưa tạo đơn)", "Không có Duyệt/Từ chối cho chính mình") as r:
+        check(REQ.get("hoa"), "HR-06 chưa tạo được đơn của chính chị Hòa nên không có gì để thử tự duyệt")
         s.step("Chị Hòa mở đơn của chính mình và bấm menu Hành động để thử tự duyệt")
         open_leave(s, REQ["hoa"])
         p = s.page
