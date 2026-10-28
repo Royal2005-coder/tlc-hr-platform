@@ -193,12 +193,17 @@ def toggle_check(s, fieldname):
     """Tick the box of a Check field (the desk renders it as a switch with a hidden input)."""
     p = s.page
     control = box(s, fieldname)
-    for sel in ("input[type=checkbox]", ".toggle-check", ".control-input", "label"):
+    # the desk hides the input behind a switch: clicking the input waits for a hit target that never comes
+    for sel in (".toggle-switch", "label", ".control-input", ".toggle-check", "input[type=checkbox]"):
         target = control.locator(sel)
-        if target.count():
-            target.last.click()
-            p.wait_for_timeout(700)
-            return True
+        if not target.count():
+            continue
+        try:
+            target.last.click(timeout=4000)
+        except Exception:
+            continue
+        p.wait_for_timeout(700)
+        return True
     return False
 
 
