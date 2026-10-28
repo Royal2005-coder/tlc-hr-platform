@@ -521,7 +521,10 @@ def native_data(s, label, method, primary=None, values=None, download=False):
             p.wait_for_timeout(1200)
         if primary:
             dialog = p.locator(".modal:visible").last
-            expect(dialog).to_be_visible()
+            try:
+                expect(dialog).to_be_visible()
+            except Exception:
+                raise AssertionError(f"{label}: hộp tham số không mở — {modal_state(p)}")
             for fieldname, value in (values or {}).items():
                 type_into(s, fieldname, value, root=dialog)
             press(s, re.compile("^" + re.escape(primary) + "$"), root=dialog)
