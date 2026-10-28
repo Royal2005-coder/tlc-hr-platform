@@ -436,7 +436,18 @@ def ai_hiring(browser):
                     reply = employee
                     break
             check(employee in reply, f"trợ lý không trả mã {employee} sau khi hỏi: {reply[-320:]}")
-            r["actual"] = f"Tab chat Desk mở DM với trợ lý; câu trả lời có {employee}"
+            s.step("Kiểm tra câu trả lời là lời của hệ thống, không phải văn bản model viết lại")
+            latest = api(s, "frappe.client.get_list", doctype="Raven Message",
+                         filters=json.dumps([["is_bot_message", "=", 1]]),
+                         fields=json.dumps(["name", "text"]), order_by="creation desc", limit_page_length=1)
+            message = (latest[0].get("text") or "") if latest else ""
+            check("](" not in message and "**" not in message,
+                  f"trợ lý trả markdown thô thay vì tin nhắn đọc được: {message[:180]}")
+            host = re.sub(r"^https?://", "", BASE).split("/")[0]
+            invented = sorted(link for link in re.findall(r"https?://([^/\s)\"]+)", message) if link != host)
+            check(not invented, f"trợ lý tự bịa đường dẫn tới {invented}; site này chỉ có host {host}")
+            r["actual"] = (f"Tab chat Desk mở DM với trợ lý; câu trả lời có {employee}, "
+                           f"là text hệ thống (không markdown thô, không link lạ)")
 
         with case(s, "REC-AI-02", "AI đối chiếu CV với JD trên hồ sơ ứng viên",
                   "Mở hồ sơ Trần Minh Anh > bấm AI chấm CV > đọc điểm, nhận định và bước tuyển dụng",
