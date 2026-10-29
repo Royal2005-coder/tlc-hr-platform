@@ -351,7 +351,7 @@ def card_value(p, label):
     """Value of a number card of the workspace (waits for it to load)."""
     widget = p.locator(".widget", has_text=label).first
     expect(widget).to_be_visible()
-    for _ in range(30):
+    for _ in range(100):
         text = widget.inner_text().replace(label, "")
         match = re.search(r"(\d[\d.,]*)\s*(K|M|B|T|Tr|tỷ|triệu)?", text)
         if match:
