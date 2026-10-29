@@ -165,22 +165,26 @@ def attach(s, fieldname, path, root=None):
 
 
 def press(s, label, root=None, timeout=12000):
-    """Nhấn một nút thật; nếu nó thuộc nhóm hành động thì mở menu "Hành động" trước, vẫn là đường người dùng đi."""
+    """Nhấn một nút thật; nhãn là chữ người dùng đọc, nên icon trong nút không phá được phép so khớp."""
     p = s.page
-    button = (root or p).locator("button:visible", has_text=label).last
-    try:
-        button.wait_for(state="visible", timeout=min(4000, timeout))
-    except Exception:
-        if root is None and open_actions(p):
-            button = p.locator(MENU_ITEMS, has_text=label).last
-        button.wait_for(state="visible", timeout=timeout)
+    button = wait_for_text(p, "button", label, timeout=min(4000, timeout), root=root)
+    if button is None and root is None and open_actions(p):
+        item = wait_for_text(p, MENU_ITEMS, label, timeout=timeout)
+        if item is not None:
+            item.click()
+            p.wait_for_timeout(700)
+            return
+    if button is None:
+        button = wait_for_text(p, "button", label, timeout=timeout, root=root)
+    if button is None:
+        raise AssertionError(f"không thấy nút “{label}”")
     button.click()
     p.wait_for_timeout(700)
 
 
 def save_form(s):
     p = s.page
-    if p.locator("button:visible", has_text=re.compile(r"^(Lưu|Save)$")).count():
+    if visible_by_text(p, "button", re.compile(r"^(Lưu|Save)$")) is not None:
         press(s, re.compile(r"^(Lưu|Save)$"))
     else:
         p.keyboard.press("Control+s")
@@ -508,13 +512,15 @@ def native_data(s, label, method, primary=None, values=None, download=False):
     p.wait_for_timeout(1500)
     dismiss_messages(p)
     s.step(f"{s.account.upper()} bấm Dữ liệu lương → {label}")
-    try:
-        press(s, re.compile(r"^Dữ liệu lương$"), timeout=15000)
-    except Exception:
+    group = wait_for_text(p, "button", "Dữ liệu lương", timeout=15000)
+    if group is None:
         dismiss_messages(p)
-        press(s, re.compile(r"^Dữ liệu lương$"), timeout=30000)
-    action = p.locator(MENU_ITEMS).filter(has_text=re.compile("^" + re.escape(label) + "$"))
-    check(action.count() == 1, f"không có đúng hành động dữ liệu {label}")
+        group = wait_for_text(p, "button", "Dữ liệu lương", timeout=30000)
+    check(group is not None, "không thấy nhóm hành động “Dữ liệu lương” trên form bảng lương")
+    group.click()
+    p.wait_for_timeout(900)
+    action = wait_for_text(p, MENU_ITEMS, label, timeout=15000)
+    check(action is not None, f"không có đúng hành động dữ liệu {label}")
     with p.expect_response(lambda res: f"/api/method/tlc_hr.interface.payroll_compliance.{method}" in res.url,
                            timeout=90000) as response:
         action.click()
@@ -532,6 +538,12 @@ def native_data(s, label, method, primary=None, values=None, download=False):
                 raise AssertionError(f"{label}: hộp tham số không mở — {modal_state(p)}")
             for fieldname, value in (values or {}).items():
                 type_into(s, fieldname, value, root=dialog)
+            # type_into leaves each field with Tab: focus lands on the next Link field and its suggestion list
+            # covers the footer, so the person clicks the dialog header to dismiss it before the action button.
+            heading = dialog.locator(".modal-title")
+            if heading.count():
+                heading.first.click()
+                p.wait_for_timeout(400)
             press(s, re.compile("^" + re.escape(primary) + "$"), root=dialog)
     result = response.value
     check(result.ok and not result.json().get("exc"), f"{label}: HTTP {result.status}")
@@ -551,9 +563,12 @@ def native_data(s, label, method, primary=None, values=None, download=False):
         target = EVIDENCE_DIR / artifact.suggested_filename
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         artifact.save_as(str(target))
-        content = target.read_text(encoding="utf-8-sig")
+        # Read bytes: read_text translates CRLF, and the server's CSV keeps the CRLF csv.writer emits.
+        content = target.read_bytes().decode("utf-8-sig")
         if data.get("content") is not None:
             check(content == data["content"], f"{label}: tệp tải không khớp dữ liệu máy chủ")
+        elif data.get("csv") is not None:
+            check(content == data["csv"], f"{label}: CSV tải xuống không khớp dữ liệu máy chủ")
         else:
             check(json.loads(content) == data, f"{label}: JSON tải xuống không khớp bản xem trước")
     dismiss_messages(p)

@@ -310,8 +310,23 @@ def hrms_request_leave(s, start, end, reason, half=False):
         p.get_by_text("Nửa ngày", exact=True).click()
     p.locator("textarea").first.fill(reason)
     p.wait_for_timeout(1500)
+    failures = []
+
+    def note_failure(response):
+        if response.status >= 400:
+            try:
+                failures.append(f"{response.status} {response.url} {response.text()[:300]}")
+            except Exception:
+                failures.append(f"{response.status} {response.url}")
+
+    p.on("response", note_failure)
     visible_button(p, "Lưu").click()
-    p.wait_for_url(re.compile(r".*/leave-applications/HR-LAP-\d{4}-\d+"), timeout=30000)
+    try:
+        p.wait_for_url(re.compile(r".*/leave-applications/HR-LAP-\d{4}-\d+"), timeout=30000)
+    except Exception:
+        body = " ".join(p.locator("body").inner_text().split())[-400:]
+        detail = f" · {' | '.join(failures[-2:])}" if failures else ""
+        raise AssertionError(f"đơn nghỉ không lưu được: {body}{detail}")
     name = re.search(r"HR-LAP-\d{4}-\d+", p.url).group(0)
     p.wait_for_load_state("networkidle")
     p.wait_for_timeout(1200)
@@ -373,6 +388,38 @@ def menu_items(p):
     return [" ".join(t.split()) for t in p.locator(MENU_ITEMS).all_inner_texts() if t.strip()]
 
 
+def visible_by_text(p, selector, label, root=None):
+    """The first visible node whose rendered text is exactly `label` (or matches a regex).
+
+    Playwright's `has_text` reads textContent, so an icon inside a button ("Dữ liệu lương" plus its chevron SVG)
+    breaks an anchored regex even though the person reads a clean label. Scan the rendered text instead.
+    """
+    nodes = (root or p).locator(selector)
+    for i in range(nodes.count()):
+        node = nodes.nth(i)
+        try:
+            if not node.is_visible():
+                continue
+            text = " ".join(node.inner_text().split())
+        except Exception:
+            continue
+        if (text == label) if isinstance(label, str) else bool(label.search(text)):
+            return node
+    return None
+
+
+def wait_for_text(p, selector, label, timeout=15000, root=None):
+    """Wait until a visible node carries this label; returns None when the timeout runs out."""
+    deadline = time.monotonic() + timeout / 1000
+    while True:
+        node = visible_by_text(p, selector, label, root)
+        if node is not None:
+            return node
+        if time.monotonic() >= deadline:
+            return None
+        p.wait_for_timeout(300)
+
+
 def open_actions(p):
     """Open the action menu: the "Hành động" button where the desk shows one, the page head's overflow menu elsewhere."""
     button = p.get_by_role("button", name="Hành động")
@@ -390,18 +437,41 @@ def open_actions(p):
 
 def press_menu(p, group, item):
     """Open a grouped form action and click one entry: the desk renders a group as a dropdown, not as a button."""
-    p.locator("button:visible", has_text=group).first.click()
+    button = wait_for_text(p, "button", group, timeout=15000)
+    if button is None:
+        raise AssertionError(f"không thấy nhóm hành động “{group}”")
+    button.click()
     p.wait_for_timeout(900)
-    clicked = p.evaluate("""(label) => {
-        const leaf = [...document.querySelectorAll('.dropdown-menu *')].filter(n => !n.children.length
-            && (n.innerText || '').trim() === label);
-        if (!leaf.length) return false;
-        leaf[0].closest('li, a, button').click();
-        return true;
-    }""", item)
-    if not clicked:
+    entry = wait_for_text(p, MENU_ITEMS, item, timeout=10000)
+    if entry is None:
         raise AssertionError(f"không thấy mục “{item}” trong nhóm “{group}”")
+    entry.click()
     p.wait_for_timeout(1200)
+
+
+def reveal_field(s, fieldname, timeout=15000):
+    """Open the tab that holds a field, then wait until its control is on screen.
+
+    The desk keeps a field in the tab its Section Break belongs to; a submitted Payroll Entry keeps the bank proof on
+    the Employees tab, so a fixed tab name in a journey breaks as soon as the form layout moves.
+    """
+    p = s.page
+    control = p.locator(f'[data-fieldname="{fieldname}"]')
+    if control.count() and control.first.is_visible():
+        return True
+    pane = None
+    if control.count():
+        pane = control.first.evaluate("el => el.closest('.tab-pane') ? el.closest('.tab-pane').id : null")
+    if pane:
+        tab = p.locator(f'[role=tab][aria-controls="{pane}"]:visible, button[aria-controls="{pane}"]:visible')
+        if tab.count():
+            tab.first.click()
+            p.wait_for_timeout(1200)
+    try:
+        control.first.wait_for(state="visible", timeout=timeout)
+        return True
+    except Exception:
+        return False
 
 
 def workflow_actions(p):

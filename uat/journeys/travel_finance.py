@@ -1088,9 +1088,18 @@ def travel_finance_flow(browser):
         login(st_an)
         # chọn kỳ trống thật: lượt full đã có phép/tăng ca của An trong tháng, và luật chống trùng chặn đúng (fixture,
         # không phải điều bị nghiệm thu — điều nghiệm thu ở đây là danh sách việc tồn của kỳ công)
-        first, last = working_day(2), working_day(3)
-        for k in range(1, 40):
-            first, last = working_day(k), working_day(k + 1)
+        # The period being read is this month's: a trip that starts next month can never be one of its open items,
+        # so the free days are searched inside the month, not in the next 40 working days.
+        today = dt.date.today()
+        month_start = today.replace(day=1)
+        month_end = (month_start + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)
+        weekdays = [month_start + dt.timedelta(days=i) for i in range((month_end - month_start).days + 1)]
+        weekdays = [day for day in weekdays if day.weekday() < 5]
+        pairs = [(weekdays[i], weekdays[i + 1]) for i in range(len(weekdays) - 1)]
+        pairs += [(day, day) for day in weekdays]
+        pairs.sort(key=lambda pair: (pair[0] < today, pair[0]))
+        for start_day, end_day in pairs:
+            first, last = start_day.isoformat(), end_day.isoformat()
             overlap = [["employee", "=", an_emp_id]]
             busy = (len(list_of(st_an, "Leave Application", filters=overlap + [["from_date", "<=", last], ["to_date", ">=", first]],
                                 fields=["name"], limit=5))
@@ -1101,7 +1110,7 @@ def travel_finance_flow(browser):
             if not busy:
                 break
         else:
-            check(False, f"không tìm được hai ngày lịch trống cho {an_emp_id} trong 40 ngày làm việc tới")
+            check(False, f"không tìm được ngày lịch trống cho {an_emp_id} trong tháng {month_start:%Y-%m}")
         unrep_trip = api(st_an, "frappe.client.insert", doc=json.dumps({
             "doctype": TR, "company": company, "employee": an_emp_id, "travel_type": "Domestic",
             "purpose_of_travel": "TLC Công tác", "tlc_destination": "Nha Trang",

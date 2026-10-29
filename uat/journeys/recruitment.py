@@ -6,11 +6,26 @@ import json
 import re
 from urllib.parse import quote
 
-from lib import BASE, REQ, Session, api, case, check, csrf_token, dt, expect, login, open_actions, press_menu, MENU_ITEMS
+from lib import BASE, REQ, Session, api, case, check, csrf_token, dt, expect, login, open_actions, press_menu, reload_form, MENU_ITEMS
 
 
 def flt(value):
     return float(value or 0)
+
+
+def scroll_chat(fr, top=True):
+    """Scroll the message list of the Raven frame; history loads as it is scrolled."""
+    fr.locator("body").evaluate(
+        """(top) => {
+            let best = null;
+            document.querySelectorAll('*').forEach(e => {
+                if (e.scrollHeight > e.clientHeight + 60 && e.clientHeight > 150) {
+                    if (!best || e.scrollHeight > best.scrollHeight) best = e;
+                }
+            });
+            if (best) best.scrollTop = top ? 0 : best.scrollHeight;
+        }""", top)
+
 
 
 
@@ -416,8 +431,16 @@ def ai_hiring(browser):
                 if "TLC Demo HR Assistant" in text:
                     break
                 p.wait_for_timeout(1500)
+            for _ in range(6):
+                scroll_chat(fr)
+                p.wait_for_timeout(1500)
+            text = " ".join(fr.locator("body").inner_text().split())
             check("TLC Demo HR Assistant" in text and "Xin chào" in text, f"khung chat chưa hiện DM trợ lý: {text[:220]}")
+            scroll_chat(fr, False)
+            p.wait_for_timeout(1000)
             s.step("Chị Hòa hỏi trợ lý ngay trong tab chat")
+            items = fr.locator("div[class*=message-item]")
+            before = items.count()
             box = fr.locator("div[contenteditable='true']").last
             expect(box).to_be_visible(timeout=30000)
             box.click()
@@ -426,25 +449,22 @@ def ai_hiring(browser):
             reply = ""
             for _ in range(24):
                 p.wait_for_timeout(4000)
-                reply = " ".join(fr.locator("body").inner_text().split())
-                if employee in reply:
-                    break
-                recent = api(s, "frappe.client.get_list", doctype="Raven Message",
-                             filters=json.dumps([["is_bot_message", "=", 1]]),
-                             fields=json.dumps(["text", "channel_id"]), order_by="creation desc", limit_page_length=5)
-                if any(employee in (row.get("text") or "") for row in recent):
-                    reply = employee
+                # the send adds the question and the answer adds a second row: anything less is history, not a reply
+                if items.count() < before + 2:
+                    continue
+                last = items.last
+                reply = " ".join(last.inner_text().split())
+                if "TLC Demo HR Assistant" in reply and employee in reply:
                     break
             check(employee in reply, f"trợ lý không trả mã {employee} sau khi hỏi: {reply[-320:]}")
             s.step("Kiểm tra câu trả lời là lời của hệ thống, không phải văn bản model viết lại")
-            latest = api(s, "frappe.client.get_list", doctype="Raven Message",
-                         filters=json.dumps([["is_bot_message", "=", 1]]),
-                         fields=json.dumps(["name", "text"]), order_by="creation desc", limit_page_length=1)
-            message = (latest[0].get("text") or "") if latest else ""
+            message = reply
+            hrefs = last.locator("a").evaluate_all("els => els.map(e => e.href)")
             check("](" not in message and "**" not in message,
                   f"trợ lý trả markdown thô thay vì tin nhắn đọc được: {message[:180]}")
             host = re.sub(r"^https?://", "", BASE).split("/")[0]
-            invented = sorted(link for link in re.findall(r"https?://([^/\s)\"]+)", message) if link != host)
+            invented = sorted(link for link in (re.sub(r"^https?://", "", u).split("/")[0] for u in hrefs)
+                              if link and link != host)
             check(not invented, f"trợ lý tự bịa đường dẫn tới {invented}; site này chỉ có host {host}")
             r["actual"] = (f"Tab chat Desk mở DM với trợ lý; câu trả lời có {employee}, "
                            f"là text hệ thống (không markdown thô, không link lạ)")

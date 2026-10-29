@@ -709,8 +709,8 @@ def ceo_signs(browser):
             first = f"{dt.date.today():%Y-%m}-01"
             slips = api_list(s, SS_D, ["name", "gross_pay", "net_pay"], [["docstatus", "=", 1], ["start_date", ">=", first]], limit=500)
             api_gross, api_net = sum(x["gross_pay"] for x in slips), sum(x["net_pay"] for x in slips)
-            # the cards print millions with two decimals; allow their rounding, not a different figure
-            tolerance = max(100_000, api_gross * 0.001, api_net * 0.001)
+            # the card prints a compact unit (1.08B), so allow the rounding of the displayed figure, not a different one
+            tolerance = max(100_000, api_gross * 0.01, api_net * 0.01)
             check(abs(gross - api_gross) <= tolerance and abs(net - api_net) <= tolerance,
                   f"thẻ gross/net {gross}/{net}, đối chiếu {api_gross}/{api_net}")
             click_card(s, "Điều hành lương gross tháng này", "Bấm thẻ gross để mở danh sách phiếu lương của tháng")
@@ -764,10 +764,8 @@ def accountant_pays(browser):
             actions = workflow_actions(p)
             check("Xác nhận đã chi" not in actions, f"chưa có chứng từ mà nút đã hiện: {actions}")
             s.step("Mở tab Nhân viên và mục Ký và chi lương để nhập đủ chứng từ")
-            employees_tab = p.locator(".nav-link:visible").filter(has_text=re.compile("Nhân viên|Employees")).first
-            employees_tab.wait_for(state="visible", timeout=30000)
-            employees_tab.click()
-            p.wait_for_timeout(1200)
+            check(reveal_field(s, "tlc_bank_reference"), "không mở được mục chứa chứng từ ngân hàng")
+            p.wait_for_timeout(600)
             s.step("Gõ số chứng từ ngân hàng vào form")
             type_text(p, "tlc_bank_reference", reference)
             s.step("Chọn ngày chi")

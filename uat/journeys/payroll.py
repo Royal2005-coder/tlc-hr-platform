@@ -311,13 +311,9 @@ def payroll_flow(browser):
         s.step("Chưa có chứng từ: Hành động không đề nghị Xác nhận đã chi")
         s.page.wait_for_timeout(800)
         s.step("Kế toán nhập số chứng từ ngân hàng và ngày chi ngay trên form")
-        # the proof fields live on the accounting tab: filling them from another tab can only wait for a visible input
-        # scoped to the form: a page-wide .nav-link also matches the workspace sidebar and navigates away
-        tab = s.page.locator(".form-tabs .nav-link:visible, .layout-main-section .nav-link:visible").filter(
-            has_text=re.compile("Kế toán & Thanh toán|Accounting")).first
-        if tab.count():
-            tab.click()
-        s.page.wait_for_timeout(1200)
+        # the proof fields live in the Employees tab on this layout: open the tab that actually holds the control
+        # instead of naming one, so a moved Section Break cannot leave the fill waiting for an invisible input
+        check(reveal_field(s, "tlc_bank_reference"), "không mở được mục chứa chứng từ ngân hàng")
         _field(s.page, "tlc_bank_reference").fill(reference)
         _field(s.page, "tlc_bank_reference").press("Tab")
         # the date control parses what is typed with the user's own date format, not with the ISO one
