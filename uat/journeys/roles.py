@@ -684,15 +684,8 @@ def prepare_state(browser):
                        filedata=base64.b64encode("Uỷ nhiệm chi demo".encode()).decode(),
                        doctype="Payment Entry", docname=proof, is_private=1)
         set_field(s, "Payment Entry", proof, "tlc_bank_proof", uploaded["file_url"])
-        try:
-            api(s, "frappe.client.submit", doc=json.dumps({"doctype": "Payment Entry", "name": proof}))
-        except Exception as exc:
-            if "TimestampMismatch" not in str(exc):
-                raise
-            fresh = api(s, "frappe.client.get_value", doctype="Payment Entry", filters=json.dumps({"name": proof}),
-                        fieldname="modified")
-            api(s, "frappe.client.submit", doc=json.dumps({"doctype": "Payment Entry", "name": proof,
-                                                           "modified": fresh["modified"]}))
+        full = api(s, "frappe.client.get", doctype="Payment Entry", name=proof)
+        api(s, "frappe.client.submit", doc=json.dumps(full))
         check(field(s, "Payment Entry", proof, "docstatus") == 1, f"{proof}: chứng từ ngân hàng chưa ghi sổ")
         REQ["advance"], REQ["advance_pe"] = advance, proof
         notes.append(f"tạm ứng {advance} ở {adv_state}, chứng từ {proof} chờ kế toán gắn vào đơn")
