@@ -563,6 +563,9 @@ def prepare_state(browser):
                       [["company", "=", company], ["docstatus", "=", 1], ["is_active", "=", "Yes"],
                        ["payroll_frequency", "=", "Monthly"], ["currency", "=", "VND"]], limit=500)}
         bank = find(s, "Account", [["company", "=", company], ["account_number", "=", "1121"]], ("name",), limit=1)[0]["name"]
+        # the payable account is a company default, which the desk fills in and an API insert does not
+        payable = (find(s, "Company", [["name", "=", company]], ("default_payroll_payable_account",), limit=1)
+                   or [{}])[0].get("default_payroll_payable_account")
 
         def payroll_entry(month, fetch=True):
             nonlocal stage
@@ -591,6 +594,7 @@ def prepare_state(browser):
                      "designation": p.get("designation") or ""} for p in selected]
             name = ins(s, PE, {"company": company, "posting_date": last, "start_date": first, "end_date": last,
                                "payroll_frequency": "Monthly", "payment_account": bank, "currency": "VND",
+                               "exchange_rate": 1, "payroll_payable_account": payable,
                                "number_of_employees": len(rows), "employees": rows})
             return name
 
