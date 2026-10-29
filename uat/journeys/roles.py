@@ -719,11 +719,20 @@ def prepare_state(browser):
         if not matching:
             location = next((row["shift_location"] for row in effective if row.get("shift_location")), None)
             check(location, "phân ca của Bình thiếu Shift Location cho chấm công GPS")
-            assignment = ins(s, "Shift Assignment", {"employee": binh_id, "company": company, "shift_type": need,
-                                                     "shift_location": location, "start_date": today,
-                                                     "end_date": today, "status": "Active"}, submit=True)
-            check(field(s, "Shift Assignment", assignment, "docstatus") == 1, f"{assignment}: phân ca chưa ghi sổ")
-            notes.append(f"phân ca {need} hôm nay cho Bình ({assignment}) để chấm công GPS trong ca")
+            try:
+                assignment = ins(s, "Shift Assignment", {"employee": binh_id, "company": company, "shift_type": need,
+                                                         "shift_location": location, "start_date": today,
+                                                         "end_date": today, "status": "Active"}, submit=True)
+            except Exception as exc:
+                if "MultipleShiftError" not in str(exc) and "đã có Phân ca đang hoạt động" not in str(exc):
+                    raise
+                assignment = None
+            if assignment:
+                check(field(s, "Shift Assignment", assignment, "docstatus") == 1, f"{assignment}: phân ca chưa ghi sổ")
+                notes.append(f"phân ca {need} hôm nay cho Bình ({assignment}) để chấm công GPS trong ca")
+            else:
+                # a seeded assignment already covers today; the GPS case decides whether it is open now
+                notes.append(f"Bình đã có phân ca hiệu lực hôm nay ({effective[0]['name']}); không tạo thêm")
         else:
             notes.append(f"Bình có phân ca {need} đang mở: {matching['name']}")
     except Exception as exc:
