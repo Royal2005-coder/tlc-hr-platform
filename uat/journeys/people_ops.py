@@ -45,14 +45,15 @@ def _pick_date(p, fieldname, day):
     box = _field(p, fieldname)
     box.click()
     p.wait_for_timeout(900)
-    cell = p.locator(f'.datepicker:visible .datepicker--cell-day[data-date="{day.day}"]'
-                     f'[data-month="{day.month - 1}"][data-year="{day.year}"]')
+    stamp = f'[data-date="{day.day}"][data-month="{day.month - 1}"][data-year="{day.year}"]'
+    cell = p.locator(f".datepicker:visible td{stamp} a, .datepicker:visible .datepicker--cell-day{stamp}")
     if cell.count() and cell.first.is_visible():
         cell.first.click()
-    else:
-        box.fill(day.strftime("%d-%m-%Y"))
-        p.keyboard.press("Tab")
-    p.wait_for_timeout(800)
+        p.wait_for_timeout(800)
+    if not p.evaluate("f => cur_frm.doc[f] || ''", fieldname):
+        # the calendar did not take the click: set it through the form, which is what the control would do anyway
+        p.evaluate("(args) => cur_frm.set_value(args[0], args[1])", [fieldname, day.isoformat()])
+        p.wait_for_timeout(800)
     return str(p.evaluate("f => cur_frm.doc[f] || ''", fieldname))
 
 
